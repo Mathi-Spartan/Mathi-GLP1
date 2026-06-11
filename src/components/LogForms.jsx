@@ -67,6 +67,17 @@ export const LOG_TYPES = {
       { key: 'notes', label: 'Notes (optional)', type: 'textarea' },
     ],
   },
+  craving: {
+    title: 'Log a craving',
+    hint: 'GLP-1 often quiets food cravings — tracking this shows your doctor how well it is working.',
+    table: 'symptoms',
+    timeField: 'occurred_at',
+    fixed: { type: 'craving' },
+    fields: [
+      { key: 'severity', label: 'How strong was the craving?', type: 'severity', options: ['1', '2', '3', '4', '5'] },
+      { key: 'notes', label: 'What did you crave? (optional)', type: 'textarea', placeholder: 'e.g. sweets, late-night snacking, carbs' },
+    ],
+  },
 }
 
 const NUMERIC = new Set(['number'])
@@ -110,6 +121,7 @@ export function LogModal({ type, userId, onClose, onSaved }) {
       if (f.key === 'severity' && v !== null) v = Number(v)
       row[f.key] = v
     }
+    if (cfg.fixed) Object.assign(row, cfg.fixed)
     setBusy(true)
     const { error } = await supabase.from(cfg.table).insert(row)
     setBusy(false)

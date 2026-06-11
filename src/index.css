@@ -378,6 +378,7 @@ label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); 
   .appbar { margin-left: -22px; margin-right: -22px; padding-left: 22px; padding-right: 22px; }
   .grid-2 { grid-template-columns: 1fr 1fr; align-items: start; }
   .actions { grid-template-columns: repeat(6, 1fr); }
+  .actions-log { grid-template-columns: repeat(7, 1fr); }
   .brand small { max-width: 320px; }
 }
 

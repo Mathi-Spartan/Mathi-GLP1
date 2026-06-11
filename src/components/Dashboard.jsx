@@ -20,6 +20,7 @@ const P = {
   water: 'M12 3s6 6.4 6 10.5A6 6 0 0 1 6 13.5C6 9.4 12 3 12 3Z',
   activity: 'M4 13h3l2.5-7 4 14 2.5-7H20',
   symptom: 'M3 12h4l2-5 3 9 2-4h7',
+  craving: 'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5Z',
   pill: 'M10.5 20.5a5 5 0 0 1-7-7l6-6a5 5 0 0 1 7 7l-6 6ZM8 8l8 8',
   gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8.4-3a8.4 8.4 0 0 0-.1-1.3l2-1.5-2-3.4-2.3 1a8 8 0 0 0-2.2-1.3L15.3 2h-4l-.5 2.5a8 8 0 0 0-2.2 1.3l-2.3-1-2 3.4 2 1.5a8.4 8.4 0 0 0 0 2.6l-2 1.5 2 3.4 2.3-1a8 8 0 0 0 2.2 1.3l.5 2.5h4l.5-2.5a8 8 0 0 0 2.2-1.3l2.3 1 2-3.4-2-1.5c.1-.4.1-.9.1-1.3Z',
   out: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
@@ -38,6 +39,7 @@ const QUICK = [
   { type: 'weight', icon: 'weight', label: 'Weight' },
   { type: 'injection', icon: 'injection', label: 'Injection' },
   { type: 'meal', icon: 'meal', label: 'Food' },
+  { type: 'craving', icon: 'craving', label: 'Craving' },
   { type: 'water', icon: 'water', label: 'Water' },
   { type: 'activity', icon: 'activity', label: 'Activity' },
   { type: 'symptom', icon: 'symptom', label: 'Side effect' },
@@ -191,7 +193,7 @@ export default function Dashboard({ session }) {
           <h2>Log something</h2>
           <div className="sub">One tap. You can adjust the time on the next screen.</div>
         </div>
-        <div className="actions">
+        <div className="actions actions-log">
           {QUICK.map((q) => (
             <button key={q.type} className="action" onClick={() => setOpenLog(q.type)}>
               <span className="action-ic"><Ic name={q.icon} /></span>
@@ -480,15 +482,16 @@ function AppleHealthCard({ userId, window, onImported, flash }) {
   return (
     <div className="panel">
       <div className="panel-h">
-        <h2>Apple Health</h2>
+        <h2>Apple Watch &amp; Health</h2>
         <div className="sub">
-          On your iPhone: Health app → your photo → "Export All Health Data". Unzip it and upload the
-          <strong> export.xml</strong> here. Only this cycle's data is imported.
+          Your Apple Watch already syncs steps, workouts, energy and weight into the iPhone
+          Health app. To pull them in: Health app → your photo → <strong>Export All Health Data</strong>,
+          unzip, and upload the <strong>export.xml</strong>. Only this cycle's data is imported.
         </div>
       </div>
       <input ref={fileRef} type="file" accept=".xml" onChange={handleFile} style={{ display: 'none' }} />
       <button className="btn btn-block" onClick={() => fileRef.current?.click()} disabled={busy}>
-        {busy ? 'Reading file…' : 'Upload export.xml'}
+        {busy ? 'Reading file…' : 'Sync from Apple Health'}
       </button>
     </div>
   )
