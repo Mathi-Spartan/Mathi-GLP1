@@ -33,44 +33,46 @@ export default function Auth() {
   }
 
   return (
-    <div className="auth-wrap">
-      <div className="card auth-card">
-        <div className="brand">
-          <div className="brand-mark">H</div>
+    <div className="auth">
+      <div className="auth-card">
+        <div className="auth-brand">
+          <div className="brand-mark">✚</div>
           <div>
             <h1>Weekly Health Tracker</h1>
             <small>Your GLP-1 journey, ready for Tuesday</small>
           </div>
         </div>
 
-        {msg && <div className={`notice ${msg.type}`}>{msg.text}</div>}
+        {msg && <div className={`note ${msg.type}`}>{msg.text}</div>}
 
-        <label>Email</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
-          autoComplete="email"
-        />
-        <div className="spacer" />
-        <label>Password</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="••••••••"
-          autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-          onKeyDown={(e) => e.key === 'Enter' && submit()}
-        />
-        <div className="spacer" />
-        <div className="spacer" />
-        <button className="btn btn-primary" style={{ width: '100%' }} onClick={submit} disabled={busy}>
+        <div className="field">
+          <label>Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+            inputMode="email"
+          />
+        </div>
+        <div className="field">
+          <label>Password</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            onKeyDown={(e) => e.key === 'Enter' && submit()}
+          />
+        </div>
+
+        <button className="btn btn-primary btn-block" onClick={submit} disabled={busy}>
           {busy ? 'Please wait…' : mode === 'signup' ? 'Create account' : 'Sign in'}
         </button>
 
-        <div className="spacer" />
-        <div className="center">
+        <div className="auth-switch">
           {mode === 'signin' ? (
             <button className="link" onClick={() => setMode('signup')}>
               New here? Create an account

@@ -12,13 +12,35 @@ import {
   toISODate,
 } from '../lib/week.js'
 
+/* ---------- inline icons (stroke, currentColor) ---------- */
+const P = {
+  weight: 'M12 3a2 2 0 0 1 1.9 1.4H19a2 2 0 0 1 2 2v.2L18.5 17a3 3 0 0 1-5.9 0L10 6.6V6.4A2 2 0 0 1 5 6.4H10.1A2 2 0 0 1 12 3ZM5 6.4 2.5 17a3 3 0 0 0 5.9 0L6 6.4',
+  injection: 'm18 2 4 4M17 3l4 4-9.5 9.5-4.5 1 1-4.5L17 3ZM10.5 9.5l4 4M3 21l4-4',
+  meal: 'M5 2v8m3-8v8M6.5 2v8M6.5 14v8M18 2c-1.5 1-2 3-2 6s.5 4 2 5v9',
+  water: 'M12 3s6 6.4 6 10.5A6 6 0 0 1 6 13.5C6 9.4 12 3 12 3Z',
+  activity: 'M4 13h3l2.5-7 4 14 2.5-7H20',
+  symptom: 'M3 12h4l2-5 3 9 2-4h7',
+  pill: 'M10.5 20.5a5 5 0 0 1-7-7l6-6a5 5 0 0 1 7 7l-6 6ZM8 8l8 8',
+  gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8.4-3a8.4 8.4 0 0 0-.1-1.3l2-1.5-2-3.4-2.3 1a8 8 0 0 0-2.2-1.3L15.3 2h-4l-.5 2.5a8 8 0 0 0-2.2 1.3l-2.3-1-2 3.4 2 1.5a8.4 8.4 0 0 0 0 2.6l-2 1.5 2 3.4 2.3-1a8 8 0 0 0 2.2 1.3l.5 2.5h4l.5-2.5a8 8 0 0 0 2.2-1.3l2.3 1 2-3.4-2-1.5c.1-.4.1-.9.1-1.3Z',
+  out: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
+  report: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6ZM14 2v6h6M8 13h8M8 17h6',
+}
+function Ic({ name, size = 24 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={P[name]} />
+    </svg>
+  )
+}
+
 const QUICK = [
-  { type: 'weight', icon: '⚖️', label: 'Weight' },
-  { type: 'injection', icon: '💉', label: 'Injection' },
-  { type: 'meal', icon: '🍽️', label: 'Food' },
-  { type: 'water', icon: '💧', label: 'Water' },
-  { type: 'activity', icon: '🚶', label: 'Activity' },
-  { type: 'symptom', icon: '🩺', label: 'Side effect' },
+  { type: 'weight', icon: 'weight', label: 'Weight' },
+  { type: 'injection', icon: 'injection', label: 'Injection' },
+  { type: 'meal', icon: 'meal', label: 'Food' },
+  { type: 'water', icon: 'water', label: 'Water' },
+  { type: 'activity', icon: 'activity', label: 'Activity' },
+  { type: 'symptom', icon: 'symptom', label: 'Side effect' },
 ]
 
 export default function Dashboard({ session }) {
@@ -130,39 +152,50 @@ export default function Dashboard({ session }) {
   }
 
   if (loading || !data || !appointment) {
-    return <div className="auth-wrap muted">Loading your week…</div>
+    return (
+      <div className="loading">
+        <div className="stack">
+          <div className="spin" />
+          <span>Loading your week…</span>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="app">
-      <div className="topbar">
+      <header className="appbar">
         <div className="brand">
-          <div className="brand-mark">H</div>
+          <div className="brand-mark">✚</div>
           <div>
-            <h1>Weekly Health Tracker</h1>
+            <h1>Health Tracker</h1>
             <small>{profile?.full_name || session.user.email}</small>
           </div>
         </div>
-        <div className="row" style={{ flex: '0 0 auto' }}>
-          <button className="btn btn-ghost" onClick={() => setShowSettings(true)}>Settings</button>
-          <button className="btn btn-ghost" onClick={() => supabase.auth.signOut()}>Sign out</button>
+        <div className="appbar-actions">
+          <button className="icon-btn" aria-label="Settings" onClick={() => setShowSettings(true)}>
+            <Ic name="gear" size={20} />
+          </button>
+          <button className="icon-btn" aria-label="Sign out" onClick={() => supabase.auth.signOut()}>
+            <Ic name="out" size={20} />
+          </button>
         </div>
-      </div>
+      </header>
 
-      {toast && <div className={`notice ${toast.type}`}>{toast.text}</div>}
+      <CycleStrip data={data} appointment={appointment} />
 
-      <WeeklyBand data={data} appointment={appointment} />
+      <StatTiles data={data} />
 
-      <Metrics data={data} />
-
-      <div className="card">
-        <h2>Log something</h2>
-        <div className="sub">One tap. Add the time if it wasn't just now.</div>
-        <div className="quicklog">
+      <div className="panel">
+        <div className="panel-h">
+          <h2>Log something</h2>
+          <div className="sub">One tap. You can adjust the time on the next screen.</div>
+        </div>
+        <div className="actions">
           {QUICK.map((q) => (
-            <button key={q.type} className="ql" onClick={() => setOpenLog(q.type)}>
-              <span className="qi">{q.icon}</span>
-              <span className="qt">{q.label}</span>
+            <button key={q.type} className="action" onClick={() => setOpenLog(q.type)}>
+              <span className="action-ic"><Ic name={q.icon} /></span>
+              <span className="action-tx">{q.label}</span>
             </button>
           ))}
         </div>
@@ -170,24 +203,32 @@ export default function Dashboard({ session }) {
 
       <MedsCard userId={userId} meds={data.medications} onLogged={loadData} flash={flash} />
 
-      <div className="grid grid-2">
-        <div className="card">
-          <h2>Weight this week</h2>
-          <div className="sub">Tuesday to Tuesday</div>
-          <WeightChart weights={data.weights} prevWeight={data.prevWeight} />
+      <div className="grid-2">
+        <div className="panel">
+          <div className="panel-h">
+            <h2>Weight this cycle</h2>
+            <div className="sub">Tuesday to Tuesday</div>
+          </div>
+          <WeightSpark weights={data.weights} prevWeight={data.prevWeight} />
         </div>
         <AppleHealthCard userId={userId} window={window} onImported={loadData} flash={flash} />
       </div>
 
       <RecentLogs data={data} />
 
-      <div className="card center">
-        <h2>Doctor's report</h2>
-        <div className="sub">
-          Everything from {fmtDate(window.start)} to {fmtDate(window.end)} as a single PDF.
+      <div className="report">
+        <div className="report-row">
+          <div className="report-ic"><Ic name="report" /></div>
+          <div>
+            <h2>Doctor's report</h2>
+            <div className="sub">
+              Everything from {fmtDate(window.start)} to {fmtDate(window.end)} — weight trend,
+              injections, side effects and more, as one clean PDF.
+            </div>
+          </div>
         </div>
         <button
-          className="btn btn-amber"
+          className="btn btn-primary btn-block"
           onClick={() => {
             try {
               generateWeeklyPDF({ profile, appointment, window, data })
@@ -200,6 +241,8 @@ export default function Dashboard({ session }) {
           Download weekly PDF
         </button>
       </div>
+
+      {toast && <div className={`toast ${toast.type}`}>{toast.text}</div>}
 
       {openLog && (
         <LogModal type={openLog} userId={userId} onClose={() => setOpenLog(null)} onSaved={onSaved} />
@@ -236,14 +279,16 @@ function MedsCard({ userId, meds, onLogged, flash }) {
     onLogged()
   }
   return (
-    <div className="card">
-      <h2>Medications</h2>
-      <div className="sub">Tap when you take one. Add your medications in Settings.</div>
-      <div className="quicklog">
+    <div className="panel">
+      <div className="panel-h">
+        <h2>Medications</h2>
+        <div className="sub">Tap when you take one. Add yours in Settings.</div>
+      </div>
+      <div className="actions">
         {meds.map((m) => (
-          <button key={m.id} className="ql" onClick={() => take(m)}>
-            <span className="qi">💊</span>
-            <span className="qt">{m.name}</span>
+          <button key={m.id} className="action is-med" onClick={() => take(m)}>
+            <span className="action-ic"><Ic name="pill" /></span>
+            <span className="action-tx">{m.name}</span>
           </button>
         ))}
       </div>
@@ -251,11 +296,17 @@ function MedsCard({ userId, meds, onLogged, flash }) {
   )
 }
 
-/* ---------------- weekly band (signature element) ---------------- */
-function WeeklyBand({ data, appointment }) {
+/* ---------------- cycle strip (signature element) ---------------- */
+function CycleStrip({ data, appointment }) {
   const appt = new Date(appointment.appointment_date + 'T12:00:00')
   const days = weekDays(appt)
   const today = new Date()
+
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const startOfAppt = new Date(appt.getFullYear(), appt.getMonth(), appt.getDate())
+  const daysToAppt = Math.round((startOfAppt - startOfToday) / 86400000)
+  const countLabel =
+    daysToAppt < 0 ? 'Past due' : daysToAppt === 0 ? 'Today' : daysToAppt === 1 ? 'Tomorrow' : `${daysToAppt} days`
 
   function dotsFor(day) {
     const has = (arr, tf) => arr.some((r) => sameDay(new Date(r[tf]), day))
@@ -269,25 +320,27 @@ function WeeklyBand({ data, appointment }) {
   }
 
   return (
-    <div className="weekband">
-      <div className="weekband-top">
-        <h2>This cycle</h2>
-        <span>Injection day: {fmtDate(appt)}</span>
+    <div className="cycle">
+      <div className="cycle-top">
+        <span className="cycle-title">This cycle</span>
+        <span className="cycle-count">
+          {daysToAppt <= 0 ? 'Appointment' : 'Appointment in'} <b>{countLabel}</b>
+        </span>
       </div>
-      <div className="days">
+      <div className="cycle-grid">
         {days.map((day) => {
           const isToday = sameDay(day, today)
           const isAppt = sameDay(day, appt)
           return (
-            <div key={day.toISOString()} className={`day${isToday ? ' today' : ''}${isAppt ? ' appt' : ''}`}>
-              <div className="dn">{day.toLocaleDateString(undefined, { weekday: 'short' })}</div>
-              <div className="dd">{day.getDate()}</div>
-              <div className="dots">
+            <div key={day.toISOString()} className={`cday${isToday ? ' is-today' : ''}${isAppt ? ' is-appt' : ''}`}>
+              {isAppt && <span className="cday-flag">Doctor</span>}
+              <div className="cday-wd">{day.toLocaleDateString(undefined, { weekday: 'short' }).slice(0, 2)}</div>
+              <div className="cday-dd">{day.getDate()}</div>
+              <div className="cday-dots">
                 {dotsFor(day).map((d, i) => (
-                  <span key={i} className={`dot ${d}`} />
+                  <span key={i} className={`cdot ${d}`} />
                 ))}
               </div>
-              {isAppt && <div className="appt-pill">Doctor</div>}
             </div>
           )
         })}
@@ -296,8 +349,8 @@ function WeeklyBand({ data, appointment }) {
   )
 }
 
-/* ---------------- metrics ---------------- */
-function Metrics({ data }) {
+/* ---------------- stat tiles ---------------- */
+function StatTiles({ data }) {
   const sorted = [...data.weights].sort((a, b) => new Date(a.logged_at) - new Date(b.logged_at))
   const last = sorted[sorted.length - 1]?.weight_kg
   const base = data.prevWeight ?? sorted[0]?.weight_kg
@@ -308,32 +361,38 @@ function Metrics({ data }) {
   const avgSteps = stepDays.length
     ? Math.round(stepDays.reduce((s, a) => s + a.steps, 0) / stepDays.length)
     : null
-  const water = data.water.reduce((s, w) => s + (w.amount_ml || 0), 0)
 
-  const cards = [
-    { label: 'Current weight', value: last != null ? `${last.toFixed(1)} kg` : '—' },
+  const tiles = [
+    { label: 'Weight', value: last != null ? last.toFixed(1) : '—', unit: last != null ? 'kg' : '' },
     {
-      label: 'Change this week',
-      value: delta != null ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)} kg` : '—',
-      cls: delta == null ? '' : delta <= 0 ? 'down' : 'up',
+      label: 'Change',
+      value: delta != null ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)}` : '—',
+      unit: delta != null ? 'kg' : '',
+      delta: delta == null ? null : delta <= 0 ? 'down' : 'up',
     },
-    { label: 'Avg steps / day', value: avgSteps != null ? avgSteps.toLocaleString() : '—' },
-    { label: 'Side effects', value: String(data.symptoms.length) },
+    { label: 'Avg steps', value: avgSteps != null ? avgSteps.toLocaleString() : '—', unit: avgSteps != null ? '/day' : '' },
+    { label: 'Side effects', value: String(data.symptoms.length), unit: '' },
   ]
   return (
-    <div className="metrics">
-      {cards.map((c) => (
-        <div key={c.label} className="metric">
-          <div className="ml">{c.label}</div>
-          <div className={`mv ${c.cls || ''}`}>{c.value}</div>
+    <div className="stats">
+      {tiles.map((t) => (
+        <div key={t.label} className="stat">
+          <div className="stat-l">{t.label}</div>
+          <div className="stat-v">
+            {t.value}
+            {t.unit && <span className="stat-u">{t.unit}</span>}
+          </div>
+          {t.delta && (
+            <div className={`stat-d ${t.delta}`}>{t.delta === 'down' ? '▼ down' : '▲ up'}</div>
+          )}
         </div>
       ))}
     </div>
   )
 }
 
-/* ---------------- weight chart (dependency-free SVG) ---------------- */
-function WeightChart({ weights, prevWeight }) {
+/* ---------------- weight sparkline (dependency-free SVG) ---------------- */
+function WeightSpark({ weights, prevWeight }) {
   const points = [...weights].sort((a, b) => new Date(a.logged_at) - new Date(b.logged_at))
   if (prevWeight != null) {
     points.unshift({ weight_kg: prevWeight, logged_at: null, baseline: true })
@@ -342,23 +401,34 @@ function WeightChart({ weights, prevWeight }) {
     return <div className="empty">Log your weight a couple of times to see the trend.</div>
   }
   const W = 520
-  const H = 160
-  const pad = { l: 38, r: 12, t: 14, b: 24 }
+  const H = 170
+  const pad = { l: 40, r: 14, t: 16, b: 22 }
   const vals = points.map((p) => p.weight_kg)
-  const min = Math.min(...vals) - 0.5
-  const max = Math.max(...vals) + 0.5
+  const min = Math.min(...vals) - 0.4
+  const max = Math.max(...vals) + 0.4
   const x = (i) => pad.l + (i / (points.length - 1)) * (W - pad.l - pad.r)
   const y = (v) => pad.t + (1 - (v - min) / (max - min || 1)) * (H - pad.t - pad.b)
-  const poly = points.map((p, i) => `${x(i)},${y(p.weight_kg)}`).join(' ')
+  const line = points.map((p, i) => `${x(i)},${y(p.weight_kg)}`).join(' ')
+  const area = `${pad.l},${H - pad.b} ${line} ${x(points.length - 1)},${H - pad.b}`
+  const mid = (min + max) / 2
 
   return (
-    <svg className="chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
-      <line x1={pad.l} y1={H - pad.b} x2={W - pad.r} y2={H - pad.b} />
-      <text x={2} y={y(max) + 4}>{max.toFixed(1)}</text>
-      <text x={2} y={y(min) + 4}>{min.toFixed(1)}</text>
-      <polyline points={poly} />
+    <svg className="spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id="sparkfill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#0e7a5c" stopOpacity="0.16" />
+          <stop offset="100%" stopColor="#0e7a5c" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <line className="grid" x1={pad.l} y1={y(max)} x2={W - pad.r} y2={y(max)} />
+      <line className="grid" x1={pad.l} y1={y(mid)} x2={W - pad.r} y2={y(mid)} />
+      <line className="axis" x1={pad.l} y1={H - pad.b} x2={W - pad.r} y2={H - pad.b} />
+      <text className="lbl" x={4} y={y(max) + 3}>{max.toFixed(1)}</text>
+      <text className="lbl" x={4} y={y(min) + 3}>{min.toFixed(1)}</text>
+      <polygon className="area" points={area} />
+      <polyline className="ln" points={line} />
       {points.map((p, i) => (
-        <circle key={i} cx={x(i)} cy={y(p.weight_kg)} r={3} />
+        <circle key={i} className={i === points.length - 1 ? 'pt-last' : 'pt'} cx={x(i)} cy={y(p.weight_kg)} r={i === points.length - 1 ? 4.5 : 3} />
       ))}
     </svg>
   )
@@ -408,14 +478,16 @@ function AppleHealthCard({ userId, window, onImported, flash }) {
   }
 
   return (
-    <div className="card">
-      <h2>Apple Health</h2>
-      <div className="sub">
-        On your iPhone: Health app → your photo → "Export All Health Data". Unzip it and upload the
-        <strong> export.xml</strong> file here. Only this week's data is imported.
+    <div className="panel">
+      <div className="panel-h">
+        <h2>Apple Health</h2>
+        <div className="sub">
+          On your iPhone: Health app → your photo → "Export All Health Data". Unzip it and upload the
+          <strong> export.xml</strong> here. Only this cycle's data is imported.
+        </div>
       </div>
       <input ref={fileRef} type="file" accept=".xml" onChange={handleFile} style={{ display: 'none' }} />
-      <button className="btn" onClick={() => fileRef.current?.click()} disabled={busy}>
+      <button className="btn btn-block" onClick={() => fileRef.current?.click()} disabled={busy}>
         {busy ? 'Reading file…' : 'Upload export.xml'}
       </button>
     </div>
@@ -428,30 +500,31 @@ function RecentLogs({ data }) {
   const push = (arr, tf, render, tag, cls) =>
     arr.forEach((r) => items.push({ t: new Date(r[tf]), text: render(r), tag, cls }))
 
-  push(data.injections, 'injected_at', (r) => `${r.drug || 'Injection'} ${r.dose_mg ? r.dose_mg + ' mg' : ''}`, 'Injection', 'amber')
+  push(data.injections, 'injected_at', (r) => `${r.drug || 'Injection'} ${r.dose_mg ? r.dose_mg + ' mg' : ''}`, 'Inject', 'bloom')
   push(data.weights.filter((w) => w.source !== 'healthkit'), 'logged_at', (r) => `${r.weight_kg} kg`, 'Weight')
   push(data.meals, 'eaten_at', (r) => `${r.meal_type}: ${r.description || ''}`, 'Food')
-  push(data.symptoms, 'occurred_at', (r) => `${r.type}${r.severity ? ` (severity ${r.severity})` : ''}`, 'Side effect', 'amber')
-  push(data.activities.filter((a) => a.source !== 'healthkit'), 'started_at', (r) => `${r.type}${r.duration_min ? ` · ${r.duration_min} min` : ''}`, 'Activity')
+  push(data.symptoms, 'occurred_at', (r) => `${r.type}${r.severity ? ` (severity ${r.severity})` : ''}`, 'Effect', 'bloom')
+  push(data.activities.filter((a) => a.source !== 'healthkit'), 'started_at', (r) => `${r.type}${r.duration_min ? ` · ${r.duration_min} min` : ''}`, 'Move')
   push(data.water, 'logged_at', (r) => `${r.amount_ml} ml water`, 'Water')
 
   items.sort((a, b) => b.t - a.t)
   const top = items.slice(0, 12)
 
   return (
-    <div className="card">
-      <h2>Recent entries</h2>
-      <div className="sub">Your manual logs this cycle. Apple Health data is summarised above and in the PDF.</div>
+    <div className="panel">
+      <div className="panel-h">
+        <h2>Recent entries</h2>
+        <div className="sub">Your manual logs this cycle. Apple Health data is summarised above and in the PDF.</div>
+      </div>
       {top.length === 0 ? (
         <div className="empty">Nothing logged yet this cycle. Use the buttons above to start.</div>
       ) : (
-        <ul className="loglist">
+        <ul className="feed">
           {top.map((it, i) => (
             <li key={i}>
-              <span>
-                <span className={`tag ${it.cls || ''}`}>{it.tag}</span> {it.text}
-              </span>
-              <span className="lt">{it.t.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+              <span className={`feed-tag ${it.cls || ''}`}>{it.tag}</span>
+              <span className="feed-main">{it.text}</span>
+              <span className="feed-time">{it.t.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</span>
             </li>
           ))}
         </ul>
@@ -514,45 +587,52 @@ function Settings({ userId, profile, appointment, onClose, onChange }) {
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Settings</h3>
-        <label>Your name (shown on the doctor's report)</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} />
-        <div className="spacer" />
-        <div className="row">
-          <div>
-            <label>Height (cm)</label>
-            <input type="number" value={height} onChange={(e) => setHeight(e.target.value)} />
+    <div className="scrim" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-grip" />
+        <div className="sheet-h">
+          <h3>Settings</h3>
+          <div className="sub">Used on your doctor's report.</div>
+        </div>
+        <div className="sheet-body">
+          <div className="field">
+            <label>Your name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} />
           </div>
-          <div>
+          <div className="field">
+            <label>Height (cm)</label>
+            <input type="number" inputMode="decimal" value={height} onChange={(e) => setHeight(e.target.value)} />
+          </div>
+          <div className="field">
             <label>GLP-1 medication</label>
             <input value={drug} onChange={(e) => setDrug(e.target.value)} placeholder="e.g. Semaglutide" />
           </div>
-        </div>
-        <div className="spacer" />
-        <label>Next appointment (your Tuesday)</label>
-        <input type="date" value={apptDate} onChange={(e) => setApptDate(e.target.value)} />
-        <div className="spacer" />
-        <label>Doctor's name (optional)</label>
-        <input value={clinician} onChange={(e) => setClinician(e.target.value)} />
+          <div className="field">
+            <label>Next appointment</label>
+            <input type="date" value={apptDate} onChange={(e) => setApptDate(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Doctor's name (optional)</label>
+            <input value={clinician} onChange={(e) => setClinician(e.target.value)} />
+          </div>
 
-        <div className="spacer" />
-        <div className="spacer" />
-        <label>Your other medications</label>
-        {meds.length > 0 && (
-          <ul className="loglist" style={{ marginBottom: 8 }}>
-            {meds.map((m) => (
-              <li key={m.id}><span>{m.name}</span></li>
-            ))}
-          </ul>
-        )}
-        <div className="row">
-          <input value={newMed} onChange={(e) => setNewMed(e.target.value)} placeholder="Add a medication" />
-          <button className="btn" onClick={addMed}>Add</button>
+          <div className="field">
+            <label>Your other medications</label>
+            {meds.length > 0 && (
+              <ul className="feed" style={{ marginBottom: 10 }}>
+                {meds.map((m) => (
+                  <li key={m.id}><span className="feed-main">{m.name}</span></li>
+                ))}
+              </ul>
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={newMed} onChange={(e) => setNewMed(e.target.value)} placeholder="Add a medication"
+                onKeyDown={(e) => e.key === 'Enter' && addMed()} />
+              <button className="btn" style={{ flex: '0 0 auto' }} onClick={addMed}>Add</button>
+            </div>
+          </div>
         </div>
-
-        <div className="actions">
+        <div className="sheet-actions">
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
           <button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
         </div>

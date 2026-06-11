@@ -5,12 +5,14 @@ import { supabase } from '../lib/supabase.js'
 export const LOG_TYPES = {
   weight: {
     title: 'Log weight',
+    hint: 'Best taken at the same time each day.',
     table: 'weight_logs',
     timeField: 'logged_at',
     fields: [{ key: 'weight_kg', label: 'Weight (kg)', type: 'number', required: true }],
   },
   injection: {
     title: 'Log GLP-1 injection',
+    hint: 'Your weekly dose.',
     table: 'injections',
     timeField: 'injected_at',
     fields: [
@@ -23,6 +25,7 @@ export const LOG_TYPES = {
   },
   meal: {
     title: 'Log food',
+    hint: 'Quick note is enough — detail helps your doctor.',
     table: 'meals',
     timeField: 'eaten_at',
     fields: [
@@ -34,6 +37,7 @@ export const LOG_TYPES = {
   },
   water: {
     title: 'Log water',
+    hint: 'Tap a quick amount or type your own.',
     table: 'water_logs',
     timeField: 'logged_at',
     quick: [250, 500, 750, 1000],
@@ -41,6 +45,7 @@ export const LOG_TYPES = {
   },
   activity: {
     title: 'Log activity',
+    hint: 'Walks count too.',
     table: 'activities',
     timeField: 'started_at',
     fields: [
@@ -53,11 +58,12 @@ export const LOG_TYPES = {
   },
   symptom: {
     title: 'Log side effect',
+    hint: 'Track how the medication makes you feel.',
     table: 'symptoms',
     timeField: 'occurred_at',
     fields: [
       { key: 'type', label: 'What are you feeling?', type: 'select', options: ['nausea', 'fatigue', 'stomach / GI', 'headache', 'dizziness', 'reduced appetite', 'other'] },
-      { key: 'severity', label: 'How strong? (1 mild – 5 severe)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+      { key: 'severity', label: 'How strong is it?', type: 'severity', options: ['1', '2', '3', '4', '5'] },
       { key: 'notes', label: 'Notes (optional)', type: 'textarea' },
     ],
   },
@@ -115,50 +121,86 @@ export function LogModal({ type, userId, onClose, onSaved }) {
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>{cfg.title}</h3>
-        {err && <div className="notice err">{err}</div>}
-
-        {cfg.quick && (
-          <div className="row" style={{ marginBottom: 12 }}>
-            {cfg.quick.map((q) => (
-              <button key={q} className="btn" onClick={() => set('amount_ml', q)}>
-                {q} ml
-              </button>
-            ))}
-          </div>
-        )}
-
-        {cfg.fields.map((f) => (
-          <div key={f.key} style={{ marginBottom: 12 }}>
-            <label>{f.label}</label>
-            {f.type === 'select' ? (
-              <select value={values[f.key] ?? f.options[0]} onChange={(e) => set(f.key, e.target.value)}>
-                {f.options.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </select>
-            ) : f.type === 'textarea' ? (
-              <textarea rows={2} value={values[f.key] ?? ''} placeholder={f.placeholder} onChange={(e) => set(f.key, e.target.value)} />
-            ) : (
-              <input
-                type={f.type === 'number' ? 'number' : 'text'}
-                inputMode={f.type === 'number' ? 'decimal' : undefined}
-                value={values[f.key] ?? ''}
-                placeholder={f.placeholder}
-                onChange={(e) => set(f.key, e.target.value)}
-              />
-            )}
-          </div>
-        ))}
-
-        <div style={{ marginBottom: 4 }}>
-          <label>When</label>
-          <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+    <div className="scrim" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-grip" />
+        <div className="sheet-h">
+          <h3>{cfg.title}</h3>
+          {cfg.hint && <div className="sub">{cfg.hint}</div>}
         </div>
 
-        <div className="actions">
+        <div className="sheet-body">
+          {err && <div className="note err">{err}</div>}
+
+          {cfg.quick && (
+            <div className="chips">
+              {cfg.quick.map((q) => (
+                <button key={q} onClick={() => set('amount_ml', q)}>
+                  +{q} ml
+                </button>
+              ))}
+            </div>
+          )}
+
+          {cfg.fields.map((f) => (
+            <div key={f.key} className="field">
+              <label>{f.label}</label>
+
+              {f.type === 'severity' ? (
+                <>
+                  <div className="scale">
+                    {f.options.map((o) => (
+                      <button
+                        key={o}
+                        className={`s${o}${String(values[f.key]) === o ? ' on' : ''}`}
+                        onClick={() => set(f.key, o)}
+                        type="button"
+                      >
+                        {o}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="scale-cap"><span>Mild</span><span>Severe</span></div>
+                </>
+              ) : f.type === 'select' ? (
+                <div className="seg">
+                  {f.options.map((o) => (
+                    <button
+                      key={o}
+                      className={values[f.key] === o ? 'on' : ''}
+                      onClick={() => set(f.key, o)}
+                      type="button"
+                    >
+                      {o}
+                    </button>
+                  ))}
+                </div>
+              ) : f.type === 'textarea' ? (
+                <textarea
+                  rows={2}
+                  value={values[f.key] ?? ''}
+                  placeholder={f.placeholder}
+                  onChange={(e) => set(f.key, e.target.value)}
+                />
+              ) : (
+                <input
+                  type={f.type === 'number' ? 'number' : 'text'}
+                  inputMode={f.type === 'number' ? 'decimal' : undefined}
+                  value={values[f.key] ?? ''}
+                  placeholder={f.placeholder}
+                  onChange={(e) => set(f.key, e.target.value)}
+                />
+              )}
+            </div>
+          ))}
+
+          <div className="field">
+            <label>When</label>
+            <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="sheet-actions">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={save} disabled={busy}>
             {busy ? 'Saving…' : 'Save'}
