@@ -1,50 +1,98 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { LogModal } from './LogForms.jsx'
-import { generateWeeklyPDF } from '../lib/pdf.js'
+import { buildReportDoc } from '../lib/pdf.js'
 import { parseAppleHealthExport } from '../lib/appleHealth.js'
-import {
-  nextTuesday,
-  reportWindow,
-  weekDays,
-  sameDay,
-  fmtDate,
-  toISODate,
-} from '../lib/week.js'
+import { nextTuesday, reportWindow, weekDays, sameDay, fmtDate, toISODate } from '../lib/week.js'
 
-/* ---------- inline icons (stroke, currentColor) ---------- */
-const P = {
-  weight: 'M12 3a2 2 0 0 1 1.9 1.4H19a2 2 0 0 1 2 2v.2L18.5 17a3 3 0 0 1-5.9 0L10 6.6V6.4A2 2 0 0 1 5 6.4H10.1A2 2 0 0 1 12 3ZM5 6.4 2.5 17a3 3 0 0 0 5.9 0L6 6.4',
-  injection: 'm18 2 4 4M17 3l4 4-9.5 9.5-4.5 1 1-4.5L17 3ZM10.5 9.5l4 4M3 21l4-4',
-  meal: 'M5 2v8m3-8v8M6.5 2v8M6.5 14v8M18 2c-1.5 1-2 3-2 6s.5 4 2 5v9',
-  water: 'M12 3s6 6.4 6 10.5A6 6 0 0 1 6 13.5C6 9.4 12 3 12 3Z',
-  activity: 'M4 13h3l2.5-7 4 14 2.5-7H20',
-  symptom: 'M3 12h4l2-5 3 9 2-4h7',
-  craving: 'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5Z',
-  pill: 'M10.5 20.5a5 5 0 0 1-7-7l6-6a5 5 0 0 1 7 7l-6 6ZM8 8l8 8',
-  gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8.4-3a8.4 8.4 0 0 0-.1-1.3l2-1.5-2-3.4-2.3 1a8 8 0 0 0-2.2-1.3L15.3 2h-4l-.5 2.5a8 8 0 0 0-2.2 1.3l-2.3-1-2 3.4 2 1.5a8.4 8.4 0 0 0 0 2.6l-2 1.5 2 3.4 2.3-1a8 8 0 0 0 2.2 1.3l.5 2.5h4l.5-2.5a8 8 0 0 0 2.2-1.3l2.3 1 2-3.4-2-1.5c.1-.4.1-.9.1-1.3Z',
-  out: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
-  report: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6ZM14 2v6h6M8 13h8M8 17h6',
-}
-function Ic({ name, size = 24 }) {
+// ── icons ────────────────────────────────────────────────────────────────────
+function Ic({ d, size = 22 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={P[name]} />
+      <path d={d} />
     </svg>
   )
 }
+const I = {
+  weight:    'M12 3a2 2 0 0 1 1.9 1.4H19a2 2 0 0 1 2 2v.2L18.5 17a3 3 0 0 1-5.9 0L10 6.6V6.4A2 2 0 0 1 5 6.4H10.1A2 2 0 0 1 12 3ZM5 6.4 2.5 17a3 3 0 0 0 5.9 0L6 6.4',
+  injection: 'm18 2 4 4M17 3l4 4-9.5 9.5-4.5 1 1-4.5L17 3ZM10.5 9.5l4 4M3 21l4-4',
+  meal:      'M5 2v8m3-8v8M6.5 2v8M6.5 14v8M18 2c-1.5 1-2 3-2 6s.5 4 2 5v9',
+  water:     'M12 3s6 6.4 6 10.5A6 6 0 0 1 6 13.5C6 9.4 12 3 12 3Z',
+  activity:  'M4 13h3l2.5-7 4 14 2.5-7H20',
+  symptom:   'M3 12h4l2-5 3 9 2-4h7',
+  craving:   'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5Z',
+  sleep:     'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z',
+  mood:      'M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2ZM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01',
+  gear:      'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8.4-3a8.4 8.4 0 0 0-.1-1.3l2-1.5-2-3.4-2.3 1a8 8 0 0 0-2.2-1.3L15.3 2h-4l-.5 2.5a8 8 0 0 0-2.2 1.3l-2.3-1-2 3.4 2 1.5a8.4 8.4 0 0 0 0 2.6l-2 1.5 2 3.4 2.3-1a8 8 0 0 0 2.2 1.3l.5 2.5h4l.5-2.5a8 8 0 0 0 2.2-1.3l2.3 1 2-3.4-2-1.5c.1-.4.1-.9.1-1.3Z',
+  out:       'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
+  report:    'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6ZM14 2v6h6M8 13h8M8 17h6',
+  chart:     'M3 3v18h18M18 9l-5 5-4-4-3 3',
+  pill:      'M10.5 20.5a5 5 0 0 1-7-7l6-6a5 5 0 0 1 7 7l-6 6ZM8 8l8 8',
+  barbell:   'M6 5v14M18 5v14M2 9h4M18 9h4M2 15h4M18 15h4M6 9h12M6 15h12',
+  protein:   'M3 2l3 3-3 3M9 2l3 3-3 3M21 12H3M12 21V3',
+}
 
 const QUICK = [
-  { type: 'weight', icon: 'weight', label: 'Weight' },
-  { type: 'injection', icon: 'injection', label: 'Injection' },
-  { type: 'meal', icon: 'meal', label: 'Food' },
-  { type: 'craving', icon: 'craving', label: 'Craving' },
-  { type: 'water', icon: 'water', label: 'Water' },
-  { type: 'activity', icon: 'activity', label: 'Activity' },
-  { type: 'symptom', icon: 'symptom', label: 'Side effect' },
+  { type: 'weight',    d: I.weight,    label: 'Weight' },
+  { type: 'injection', d: I.injection, label: 'Injection' },
+  { type: 'meal',      d: I.meal,      label: 'Food' },
+  { type: 'craving',   d: I.craving,   label: 'Craving' },
+  { type: 'water',     d: I.water,     label: 'Water' },
+  { type: 'activity',  d: I.activity,  label: 'Activity' },
+  { type: 'symptom',   d: I.symptom,   label: 'Side effect' },
+  { type: 'sleep',     d: I.sleep,     label: 'Sleep' },
+  { type: 'mood',      d: I.mood,      label: 'Mood' },
 ]
 
+// ── helpers ───────────────────────────────────────────────────────────────────
+function ageFrom(dob) {
+  if (!dob) return null
+  return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 864e5))
+}
+function ladderFor(drug) {
+  const s = (drug || '').toLowerCase()
+  if (s.includes('tirzep') || s.includes('mounjaro') || s.includes('zepbound'))
+    return [2.5, 5, 7.5, 10, 12.5, 15]
+  if (s.includes('semaglu') || s.includes('ozempic') || s.includes('wegovy'))
+    return [0.25, 0.5, 1, 1.7, 2.4]
+  if (s.includes('lira') || s.includes('saxenda'))
+    return [0.6, 1.2, 1.8, 2.4, 3.0]
+  return []
+}
+function n1(v) { return v != null && !isNaN(v) ? Number(v).toFixed(1) : '—' }
+function pct(v, max) { return Math.min(100, Math.max(0, (v / max) * 100)) }
+
+// ── health score ──────────────────────────────────────────────────────────────
+function calcScore(data, profile) {
+  let score = 0, total = 0
+  const add = (pts, max) => { score += Math.min(pts, max); total += max }
+  const weights = data.weights || []
+  const lastW = weights.length ? Number(weights[weights.length - 1].weight_kg) : null
+  const baseW = profile?.baseline_weight_kg
+  if (lastW && baseW && lastW < baseW) add(15, 15)
+  const sideFx = (data.symptoms || []).filter(s => s.type !== 'craving')
+  const peakSev = sideFx.reduce((m, s) => Math.max(m, Number(s.severity) || 0), 0)
+  add(peakSev <= 1 ? 15 : peakSev <= 2 ? 10 : peakSev <= 3 ? 5 : 0, 15)
+  const cravings = (data.symptoms || []).filter(s => s.type === 'craving')
+  const avgCrav = cravings.length ? cravings.reduce((a, c) => a + (Number(c.severity) || 0), 0) / cravings.length : null
+  add(avgCrav == null ? 10 : avgCrav <= 1 ? 15 : avgCrav <= 2 ? 12 : avgCrav <= 3 ? 8 : 4, 15)
+  const totalProt = (data.meals || []).reduce((s, m) => s + (Number(m.protein_g) || 0), 0)
+  const protPerKg = lastW && totalProt ? totalProt / 7 / lastW : null
+  add(protPerKg == null ? 5 : protPerKg >= 1.2 ? 15 : protPerKg >= 0.8 ? 8 : 3, 15)
+  const totalMin = (data.activities || []).reduce((s, a) => s + (Number(a.duration_min) || 0), 0)
+  add(totalMin >= 150 ? 15 : totalMin >= 60 ? 10 : totalMin >= 30 ? 6 : 0, 15)
+  const avgSleep = (data.sleep || []).length
+    ? (data.sleep || []).reduce((s, sl) => s + (Number(sl.hours) || 0), 0) / data.sleep.length : null
+  add(avgSleep == null ? 5 : avgSleep >= 7 && avgSleep <= 9 ? 10 : avgSleep >= 6 ? 7 : 3, 10)
+  const avgMood = (data.mood || []).length
+    ? (data.mood || []).reduce((s, m) => s + (Number(m.score) || 0), 0) / data.mood.length : null
+  add(avgMood == null ? 5 : avgMood >= 3 ? 10 : avgMood >= 2 ? 6 : 3, 10)
+  add((data.injections || []).length > 0 ? 5 : 0, 5)
+  return total ? Math.round((score / total) * 100) : 0
+}
+
+// ── main component ────────────────────────────────────────────────────────────
 export default function Dashboard({ session }) {
   const userId = session.user.id
   const [profile, setProfile] = useState(null)
@@ -55,148 +103,422 @@ export default function Dashboard({ session }) {
   const [showSettings, setShowSettings] = useState(false)
   const [toast, setToast] = useState(null)
 
-  const window = useMemo(
-    () => (appointment ? reportWindow(new Date(appointment.appointment_date + 'T12:00:00')) : null),
+  const win = useMemo(
+    () => appointment ? reportWindow(new Date(appointment.appointment_date + 'T12:00:00')) : null,
     [appointment]
   )
 
-  // ---- initial: profile + appointment ----
   useEffect(() => {
     let active = true
     ;(async () => {
-      // profile
       let { data: p } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle()
       if (!p) {
         await supabase.from('profiles').insert({ id: userId, full_name: session.user.email })
         p = { id: userId, full_name: session.user.email }
       }
-      // appointment: nearest upcoming, else create next Tuesday
       const todayISO = toISODate(new Date())
-      let { data: appts } = await supabase
-        .from('appointments')
-        .select('*')
-        .gte('appointment_date', todayISO)
-        .order('appointment_date', { ascending: true })
-        .limit(1)
-      let appt = appts && appts[0]
+      let { data: appts } = await supabase.from('appointments').select('*')
+        .gte('appointment_date', todayISO).order('appointment_date', { ascending: true }).limit(1)
+      let appt = appts?.[0]
       if (!appt) {
-        const tue = toISODate(nextTuesday())
-        const { data: created } = await supabase
-          .from('appointments')
-          .insert({ user_id: userId, appointment_date: tue })
-          .select()
-          .single()
+        const { data: created } = await supabase.from('appointments')
+          .insert({ user_id: userId, appointment_date: toISODate(nextTuesday()) }).select().single()
         appt = created
       }
       if (!active) return
-      setProfile(p)
-      setAppointment(appt)
+      setProfile(p); setAppointment(appt)
     })()
-    return () => {
-      active = false
-    }
+    return () => { active = false }
   }, [userId, session.user.email])
 
-  // ---- load window data whenever the appointment changes ----
   const loadData = useCallback(async () => {
-    if (!window) return
+    if (!win) return
     setLoading(true)
-    const s = window.start.toISOString()
-    const e = window.end.toISOString()
-    const q = (table, tf) =>
-      supabase.from(table).select('*').gte(tf, s).lte(tf, e).order(tf, { ascending: true })
-
-    const [weights, injections, meals, water, activities, medLogs, symptoms, meds, prev] =
+    const s = win.start.toISOString(), e = win.end.toISOString()
+    const q = (table, tf) => supabase.from(table).select('*').gte(tf, s).lte(tf, e).order(tf, { ascending: true })
+    const [weights, injections, meals, water, activities, medLogs, symptoms, meds, sleep, mood, prev] =
       await Promise.all([
-        q('weight_logs', 'logged_at'),
-        q('injections', 'injected_at'),
-        q('meals', 'eaten_at'),
-        q('water_logs', 'logged_at'),
-        q('activities', 'started_at'),
-        q('medication_logs', 'taken_at'),
-        q('symptoms', 'occurred_at'),
-        supabase.from('medications').select('*').eq('active', true),
-        supabase
-          .from('weight_logs')
-          .select('weight_kg, logged_at')
-          .lt('logged_at', s)
-          .order('logged_at', { ascending: false })
-          .limit(1),
+        q('weight_logs', 'logged_at'), q('injections', 'injected_at'), q('meals', 'eaten_at'),
+        q('water_logs', 'logged_at'), q('activities', 'started_at'), q('medication_logs', 'taken_at'),
+        q('symptoms', 'occurred_at'), supabase.from('medications').select('*').eq('active', true),
+        q('sleep_logs', 'logged_at'), q('mood_logs', 'logged_at'),
+        supabase.from('weight_logs').select('weight_kg').lt('logged_at', s)
+          .order('logged_at', { ascending: false }).limit(1),
       ])
-
     setData({
-      weights: weights.data || [],
-      injections: injections.data || [],
-      meals: meals.data || [],
-      water: water.data || [],
-      activities: activities.data || [],
-      medicationLogs: medLogs.data || [],
-      symptoms: symptoms.data || [],
-      medications: meds.data || [],
-      prevWeight: prev.data && prev.data[0] ? prev.data[0].weight_kg : null,
+      weights: weights.data || [], injections: injections.data || [], meals: meals.data || [],
+      water: water.data || [], activities: activities.data || [], medicationLogs: medLogs.data || [],
+      symptoms: symptoms.data || [], medications: meds.data || [],
+      sleep: sleep.data || [], mood: mood.data || [],
+      prevWeight: prev.data?.[0]?.weight_kg ?? null,
     })
     setLoading(false)
-  }, [window])
+  }, [win])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
+  useEffect(() => { loadData() }, [loadData])
 
   function flash(text, type = 'ok') {
     setToast({ text, type })
     setTimeout(() => setToast(null), 3500)
   }
 
-  function onSaved() {
-    setOpenLog(null)
-    loadData()
-    flash('Saved.')
-  }
+  function onSaved() { setOpenLog(null); loadData(); flash('Saved.') }
 
   if (loading || !data || !appointment) {
     return (
       <div className="loading">
-        <div className="stack">
-          <div className="spin" />
-          <span>Loading your week…</span>
-        </div>
+        <div className="stack"><div className="spin" /><span>Loading…</span></div>
       </div>
     )
   }
 
+  const score = calcScore(data, profile)
+  const days = weekDays(new Date(appointment.appointment_date + 'T12:00:00'))
+  const today = new Date()
+  const apptDate = new Date(appointment.appointment_date + 'T12:00:00')
+  const daysToAppt = Math.ceil((apptDate - today) / (24 * 60 * 60 * 1000))
+
+  const weights = data.weights
+  const lastW = weights.length ? Number(weights[weights.length - 1].weight_kg) : null
+  const baseW = profile?.baseline_weight_kg ? Number(profile.baseline_weight_kg) : null
+  const goalW = profile?.height_cm ? 24.9 * Math.pow(Number(profile.height_cm) / 100, 2) : null
+  const lostTotal = baseW && lastW ? baseW - lastW : null
+  const journeyPct = baseW && goalW && lastW ? Math.max(0, Math.min(100, ((baseW - lastW) / (baseW - goalW)) * 100)) : null
+  const cycleStartW = data.prevWeight ?? (weights[0]?.weight_kg ? Number(weights[0].weight_kg) : null)
+  const deltaW = lastW && cycleStartW ? lastW - cycleStartW : null
+
+  const sideFx = (data.symptoms || []).filter(s => s.type?.toLowerCase() !== 'craving')
+  const cravings = (data.symptoms || []).filter(s => s.type?.toLowerCase() === 'craving')
+  const avgCraving = cravings.length ? cravings.reduce((a, c) => a + (Number(c.severity) || 0), 0) / cravings.length : null
+  const cravingTrend = (() => {
+    if (cravings.length < 2) return null
+    const sorted = [...cravings].sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at))
+    const mid = Math.floor(sorted.length / 2)
+    const avg = arr => arr.reduce((s, c) => s + (Number(c.severity) || 0), 0) / arr.length
+    return avg(sorted.slice(mid)) - avg(sorted.slice(0, mid))
+  })()
+  const peakSev = sideFx.reduce((m, s) => Math.max(m, Number(s.severity) || 0), 0)
+  const giClear = peakSev <= 2
+
+  const inj = data.injections
+  const lastInj = inj.length ? inj[inj.length - 1] : null
+  const lastDose = lastInj?.dose_mg ? Number(lastInj.dose_mg) : null
+  const lastDrug = lastInj?.drug || profile?.glp1_drug || ''
+  const ladder = ladderFor(lastDrug)
+  const curRung = ladder.findIndex(s => lastDose != null && Math.abs(s - lastDose) < 1e-6)
+  const nextDose = curRung >= 0 && curRung < ladder.length - 1 ? ladder[curRung + 1] : null
+
+  const spanDays = 7
+  const totalProt = data.meals.reduce((s, m) => s + (Number(m.protein_g) || 0), 0)
+  const protPerKg = lastW && totalProt ? (totalProt / spanDays / lastW) : null
+  const totalWater = data.water.reduce((s, w) => s + (Number(w.amount_ml) || 0), 0)
+  const avgWater = totalWater / spanDays / 1000
+  const totalActiveMin = data.activities.reduce((s, a) => s + (Number(a.duration_min) || 0), 0)
+  const resistanceMin = data.activities.filter(a => /strength|weight|resist|barbell/i.test(a.type || '')).reduce((s, a) => s + (Number(a.duration_min) || 0), 0)
+  const avgSleep = data.sleep.length ? data.sleep.reduce((s, sl) => s + (Number(sl.hours) || 0), 0) / data.sleep.length : null
+  const avgMood = data.mood.length ? data.mood.reduce((s, m) => s + (Number(m.score) || 0), 0) / data.mood.length : null
+  const moodLabel = ['', 'Low', 'Okay', 'Good', 'Great', 'Best']
+
+  const treatStart = profile?.treatment_start_date ? new Date(profile.treatment_start_date) : null
+  const weekNum = treatStart ? Math.ceil((today - treatStart) / (7 * 24 * 60 * 60 * 1000)) : null
+  const monthNum = treatStart ? Math.ceil((today - treatStart) / (30.5 * 24 * 60 * 60 * 1000)) : null
+
+  // day-level data for week strip
+  function dayData(day) {
+    const hits = { inj: false, weight: false, craving: false, side: false, activity: false, sleep: false, meal: false }
+    data.injections.forEach(r => { if (sameDay(new Date(r.injected_at), day)) hits.inj = true })
+    data.weights.forEach(r => { if (sameDay(new Date(r.logged_at), day)) hits.weight = true })
+    data.symptoms.forEach(r => {
+      if (sameDay(new Date(r.occurred_at), day)) {
+        if (r.type === 'craving') hits.craving = true; else hits.side = true
+      }
+    })
+    data.activities.forEach(r => { if (sameDay(new Date(r.started_at), day)) hits.activity = true })
+    data.sleep.forEach(r => { if (sameDay(new Date(r.logged_at), day)) hits.sleep = true })
+    data.meals.forEach(r => { if (sameDay(new Date(r.eaten_at), day)) hits.meal = true })
+    return hits
+  }
+
+  const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const MON_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+  function StatBar({ value, max, color = '#1d9e75' }) {
+    const w = Math.min(100, Math.max(0, (value / max) * 100))
+    return (
+      <div className="stat-bar">
+        <div className="stat-bar-fill" style={{ width: `${w}%`, background: color }} />
+      </div>
+    )
+  }
+
+  function GradeTag({ grade }) {
+    const cls = grade === 'A' ? 'grade-a' : grade === 'B' ? 'grade-b' : 'grade-c'
+    return <span className={`grade-tag ${cls}`}>{grade}</span>
+  }
+
+  function downloadPDF() {
+    try {
+      const doc = buildReportDoc({ profile, appointment, window: win, data })
+      doc.save(`glp1-report-week${weekNum || ''}.pdf`)
+      flash('Report downloaded.')
+    } catch (err) {
+      flash('Could not build report: ' + err.message, 'err')
+    }
+  }
+
   return (
     <div className="app">
+      {/* ── topbar ── */}
       <header className="appbar">
         <div className="brand">
           <div className="brand-mark">✚</div>
           <div>
-            <h1>Health Tracker</h1>
+            <h1>GLP-1 Tracker</h1>
             <small>{profile?.full_name || session.user.email}</small>
           </div>
         </div>
         <div className="appbar-actions">
-          <button className="icon-btn" aria-label="Settings" onClick={() => setShowSettings(true)}>
-            <Ic name="gear" size={20} />
+          <button className="icon-btn" onClick={downloadPDF} aria-label="Download report">
+            <Ic d={I.report} size={20} />
           </button>
-          <button className="icon-btn" aria-label="Sign out" onClick={() => supabase.auth.signOut()}>
-            <Ic name="out" size={20} />
+          <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Settings">
+            <Ic d={I.gear} size={20} />
+          </button>
+          <button className="icon-btn" onClick={() => supabase.auth.signOut()} aria-label="Sign out">
+            <Ic d={I.out} size={20} />
           </button>
         </div>
       </header>
 
-      <CycleStrip data={data} appointment={appointment} />
-
-      <StatTiles data={data} />
-
-      <div className="panel">
-        <div className="panel-h">
-          <h2>Log something</h2>
-          <div className="sub">One tap. You can adjust the time on the next screen.</div>
+      {/* ── journey banner ── */}
+      <div className="journey-banner">
+        <div className="jb-top-row">
+          <span className="jb-eyebrow">
+            Treatment journey{weekNum ? ` · Week ${weekNum}` : ''}{monthNum ? ` · Month ${monthNum}` : ''}
+          </span>
+          <div className="jb-badges">
+            {weekNum && <span className="jb-badge">Week {weekNum}</span>}
+            {daysToAppt >= 0 && (
+              <span className={`jb-badge ${daysToAppt <= 2 ? 'jb-badge-appt' : ''}`}>
+                {daysToAppt === 0 ? 'Doctor today' : daysToAppt === 1 ? 'Doctor tomorrow' : `Doctor in ${daysToAppt} days`}
+              </span>
+            )}
+          </div>
         </div>
+        <div className="jb-stats">
+          <div className="jbs">
+            <div className={`jbs-v ${lostTotal != null && lostTotal > 0 ? 'green' : ''}`}>
+              {lostTotal != null ? `-${lostTotal.toFixed(1)}` : '—'}
+            </div>
+            <div className="jbs-l">kg lost total</div>
+          </div>
+          <div className="jbs">
+            <div className="jbs-v">{lastW ? n1(lastW) : '—'}</div>
+            <div className="jbs-l">current kg</div>
+          </div>
+          <div className="jbs">
+            <div className={`jbs-v ${avgCraving != null ? (avgCraving <= 2 ? 'green' : 'amber') : ''}`}>
+              {avgCraving != null ? avgCraving.toFixed(1) : '—'}
+            </div>
+            <div className="jbs-l">craving avg</div>
+          </div>
+          <div className="jbs">
+            <div className={`jbs-v ${giClear ? 'green' : 'red'}`}>{sideFx.length}</div>
+            <div className="jbs-l">GI events</div>
+          </div>
+        </div>
+        {journeyPct != null && (
+          <div className="jb-progress-row">
+            <span className="jb-prog-label">Weight goal</span>
+            <div className="jb-prog-track">
+              <div className="jb-prog-fill" style={{ width: `${journeyPct}%` }} />
+            </div>
+            <span className="jb-prog-val">{journeyPct.toFixed(0)}%</span>
+          </div>
+        )}
+        {ladder.length > 0 && (
+          <div className="jb-ladder-row">
+            <span className="jb-prog-label">Dose ladder</span>
+            <div className="jb-ladder">
+              {ladder.map((s, i) => (
+                <div key={s} className="jb-ladder-step">
+                  {i > 0 && <div className={`jb-rung ${i <= curRung ? 'done' : ''}`} />}
+                  <div className={`jb-dot ${i < curRung ? 'done' : i === curRung ? 'cur' : ''}`} />
+                </div>
+              ))}
+            </div>
+            <span className="jb-prog-val">{lastDose ? `${lastDose}mg` : '—'}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── week strip ── */}
+      <div className="panel week-panel">
+        <div className="week-label">This week · {fmtDate(win.start)} – {fmtDate(win.end)}</div>
+        <div className="week-strip">
+          {days.map(day => {
+            const isToday = sameDay(day, today)
+            const isAppt = sameDay(day, apptDate)
+            const hits = dayData(day)
+            const hasAny = Object.values(hits).some(Boolean)
+            return (
+              <div key={day.toISOString()} className={`wday ${isToday ? 'wday-today' : ''} ${isAppt ? 'wday-appt' : ''} ${hasAny && !isToday && !isAppt ? 'wday-has' : ''}`}>
+                <div className="wday-name">{DAY_NAMES[day.getDay()]}</div>
+                <div className="wday-num">{day.getDate()}</div>
+                <div className="wday-dots">
+                  {hits.weight && <div className="wd g" />}
+                  {hits.inj && <div className="wd r" />}
+                  {hits.craving && <div className="wd p" />}
+                  {hits.side && <div className="wd a" />}
+                  {hits.activity && <div className="wd b" />}
+                  {hits.sleep && <div className="wd v" />}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ── alert bar ── */}
+      {daysToAppt >= 0 && daysToAppt <= 4 && (
+        <div className="alert-bar">
+          <Ic d={I.report} size={15} />
+          <span>
+            {daysToAppt <= 1 ? 'Doctor visit very soon — ' : `${daysToAppt} days until your appointment — `}
+            log weight, craving and any side effects for your report.
+          </span>
+        </div>
+      )}
+
+      {/* ── health score + key vitals ── */}
+      <div className="panel">
+        <div className="panel-h"><h2>This week's vitals</h2></div>
+        <div className="score-vitals-row">
+          <div className="score-ring">
+            <div className="score-circle">
+              <div className="score-num">{score}</div>
+              <div className="score-label">score</div>
+            </div>
+            <div className="score-sub">Week {weekNum || '—'} · {score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : 'Needs attention'}</div>
+          </div>
+          <div className="vitals-grid">
+            <div className="vital-card">
+              <div className="vc-icon" style={{ background: '#e1f5ee', color: '#0f6e56' }}><Ic d={I.weight} size={14} /></div>
+              <div className="vc-label">Weight</div>
+              <div className="vc-val" style={{ color: '#0f6e56' }}>{lastW ? n1(lastW) : '—'}<span className="vc-unit">kg</span></div>
+              {deltaW != null && <div className={`vc-sub ${deltaW <= 0 ? 'ok' : 'warn'}`}>{deltaW <= 0 ? '▼' : '▲'} {Math.abs(deltaW).toFixed(1)} kg</div>}
+            </div>
+            <div className="vital-card">
+              <div className="vc-icon" style={{ background: '#fae8e3', color: '#712b13' }}><Ic d={I.injection} size={14} /></div>
+              <div className="vc-label">Injection</div>
+              <div className="vc-val">{lastDose ? `${lastDose}mg` : '—'}</div>
+              <div className="vc-sub">{lastInj ? `Step ${curRung + 1}/${ladder.length}` : 'Not logged'}</div>
+            </div>
+            <div className="vital-card">
+              <div className="vc-icon" style={{ background: '#fbeaf0', color: '#72243e' }}><Ic d={I.craving} size={14} /></div>
+              <div className="vc-label">Food noise</div>
+              <div className={`vc-val ${avgCraving != null ? (avgCraving <= 2 ? '' : avgCraving <= 3 ? 'amber' : 'warn') : ''}`}>
+                {avgCraving != null ? avgCraving.toFixed(1) : '—'}<span className="vc-unit">/5</span>
+              </div>
+              {cravingTrend != null && <div className={`vc-sub ${cravingTrend <= 0 ? 'ok' : 'warn'}`}>{cravingTrend <= 0 ? 'Easing' : 'Rising ▲'}</div>}
+            </div>
+            <div className="vital-card">
+              <div className="vc-icon" style={{ background: giClear ? '#e1f5ee' : '#fae8e3', color: giClear ? '#0f6e56' : '#712b13' }}><Ic d={I.symptom} size={14} /></div>
+              <div className="vc-label">GI tolerance</div>
+              <div className={`vc-val ${giClear ? '' : 'warn'}`}>{giClear ? 'Clear' : 'Events'}</div>
+              <div className={`vc-sub ${giClear ? 'ok' : 'warn'}`}>{giClear ? 'Escalation ready' : `${sideFx.length} logged`}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── GLP-1 parameters ── */}
+      <div className="panel">
+        <div className="panel-h"><h2>GLP-1 health parameters</h2></div>
+        <div className="params-grid">
+
+          <div className="param-card">
+            <div className="pc-head">
+              <div className="pc-icon" style={{ background: '#e6f1fb', color: '#0c447c' }}><Ic d={I.protein} size={13} /></div>
+              <div><div className="pc-title">Protein</div><div className="pc-sub">Target ≥ 1.2 g/kg/day</div></div>
+            </div>
+            <div className={`pc-val ${protPerKg != null ? (protPerKg >= 1.2 ? 'green' : 'amber') : ''}`}>
+              {protPerKg != null ? protPerKg.toFixed(2) : '—'}<span className="pc-unit">g/kg/day</span>
+            </div>
+            <StatBar value={protPerKg || 0} max={1.6} color={protPerKg >= 1.2 ? '#1d9e75' : '#ba7517'} />
+            <div className="pc-note">{protPerKg != null ? (protPerKg >= 1.2 ? 'On target' : 'Below minimum — lean mass risk') : 'Not logged'}</div>
+          </div>
+
+          <div className="param-card">
+            <div className="pc-head">
+              <div className="pc-icon" style={{ background: '#e6f1fb', color: '#0c447c' }}><Ic d={I.water} size={13} /></div>
+              <div><div className="pc-title">Hydration</div><div className="pc-sub">Target ≥ 2.5 L/day</div></div>
+            </div>
+            <div className={`pc-val ${avgWater >= 2.5 ? 'green' : avgWater >= 1.5 ? 'amber' : 'warn'}`}>
+              {totalWater > 0 ? avgWater.toFixed(1) : '—'}<span className="pc-unit">L/day</span>
+            </div>
+            <StatBar value={avgWater || 0} max={2.5} color={avgWater >= 2.5 ? '#1d9e75' : '#ba7517'} />
+            <div className="pc-note">{totalWater > 0 ? (avgWater >= 2.5 ? 'On target' : 'Increase intake') : 'Not logged'}</div>
+          </div>
+
+          <div className="param-card">
+            <div className="pc-head">
+              <div className="pc-icon" style={{ background: '#faeeda', color: '#633806' }}><Ic d={I.activity} size={13} /></div>
+              <div><div className="pc-title">Activity</div><div className="pc-sub">Target ≥ 150 min/week</div></div>
+            </div>
+            <div className={`pc-val ${totalActiveMin >= 150 ? 'green' : totalActiveMin >= 60 ? 'amber' : 'warn'}`}>
+              {totalActiveMin || '—'}<span className="pc-unit">min</span>
+            </div>
+            <StatBar value={totalActiveMin} max={150} color={totalActiveMin >= 150 ? '#1d9e75' : '#ba7517'} />
+            <div className="pc-note">{resistanceMin > 0 ? `${resistanceMin}min resistance` : 'No resistance training'}</div>
+          </div>
+
+          <div className="param-card">
+            <div className="pc-head">
+              <div className="pc-icon" style={{ background: '#eeedfe', color: '#3c3489' }}><Ic d={I.sleep} size={13} /></div>
+              <div><div className="pc-title">Sleep</div><div className="pc-sub">Target 7–9 hrs</div></div>
+            </div>
+            <div className={`pc-val ${avgSleep != null ? (avgSleep >= 7 && avgSleep <= 9 ? 'green' : 'amber') : ''}`}>
+              {avgSleep != null ? avgSleep.toFixed(1) : '—'}<span className="pc-unit">hrs avg</span>
+            </div>
+            <StatBar value={avgSleep || 0} max={9} color={avgSleep >= 7 ? '#1d9e75' : '#ba7517'} />
+            <div className="pc-note">{avgSleep != null ? (avgSleep >= 7 && avgSleep <= 9 ? 'Good range' : 'Outside target') : 'Not logged'}</div>
+          </div>
+
+          <div className="param-card param-card-wide">
+            <div className="pc-head">
+              <div className="pc-icon" style={{ background: '#fbeaf0', color: '#72243e' }}><Ic d={I.mood} size={13} /></div>
+              <div><div className="pc-title">Energy & mood</div><div className="pc-sub">Daily self-report</div></div>
+            </div>
+            <div className="mood-row">
+              {[1,2,3,4,5].map(s => {
+                const rounded = avgMood ? Math.round(avgMood) : null
+                const active = rounded === s
+                return (
+                  <div key={s} className={`mood-btn ${active ? 'mood-active' : ''}`}
+                    onClick={() => setOpenLog('mood')}>
+                    <div className="mood-num">{s}</div>
+                    <div className="mood-label">{['Low','Okay','Good','Great','Best'][s-1]}</div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="pc-note" style={{ marginTop: 6 }}>
+              {avgMood != null ? `Average ${avgMood.toFixed(1)}/5 — ${moodLabel[Math.round(avgMood)]}` : 'Tap a button above to log mood'}
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* ── log buttons ── */}
+      <div className="panel">
+        <div className="panel-h"><h2>Log something</h2><div className="sub">One tap — adjust time on next screen.</div></div>
         <div className="actions actions-log">
-          {QUICK.map((q) => (
-            <button key={q.type} className="action" onClick={() => setOpenLog(q.type)}>
-              <span className="action-ic"><Ic name={q.icon} /></span>
+          {QUICK.map(q => (
+            <button key={q.type} className={`action ${q.type === 'sleep' || q.type === 'mood' ? 'action-new' : ''}`}
+              onClick={() => setOpenLog(q.type)}>
+              <span className="action-ic"><Ic d={q.d} /></span>
               <span className="action-tx">{q.label}</span>
             </button>
           ))}
@@ -205,342 +527,102 @@ export default function Dashboard({ session }) {
 
       <MedsCard userId={userId} meds={data.medications} onLogged={loadData} flash={flash} />
 
-      <div className="grid-2">
-        <div className="panel">
-          <div className="panel-h">
-            <h2>Weight this cycle</h2>
-            <div className="sub">Tuesday to Tuesday</div>
-          </div>
-          <WeightSpark weights={data.weights} prevWeight={data.prevWeight} />
+      <AppleHealthCard userId={userId} window={win} onImported={loadData} flash={flash} />
+
+      {/* ── report strip ── */}
+      <div className="panel report-strip">
+        <div className="rs-icon"><Ic d={I.report} size={20} /></div>
+        <div className="rs-text">
+          <div className="rs-title">Doctor report</div>
+          <div className="rs-sub">Week {weekNum || '—'} · Full scorecard for {appointment.clinician || 'your doctor'}</div>
         </div>
-        <AppleHealthCard userId={userId} window={window} onImported={loadData} flash={flash} />
+        <button className="btn btn-primary rs-btn" onClick={downloadPDF}>Download PDF</button>
       </div>
 
-      <RecentLogs data={data} />
-
-      <div className="report">
-        <div className="report-row">
-          <div className="report-ic"><Ic name="report" /></div>
-          <div>
-            <h2>Doctor's report</h2>
-            <div className="sub">
-              Everything from {fmtDate(window.start)} to {fmtDate(window.end)} — weight trend,
-              injections, side effects and more, as one clean PDF.
-            </div>
-          </div>
-        </div>
-        <button
-          className="btn btn-primary btn-block"
-          onClick={() => {
-            try {
-              generateWeeklyPDF({ profile, appointment, window, data })
-              flash('Report downloaded. Check your downloads folder.')
-            } catch (err) {
-              flash('Could not build the report: ' + err.message, 'err')
-            }
-          }}
-        >
-          Download weekly PDF
-        </button>
-      </div>
-
+      {/* ── toast ── */}
       {toast && <div className={`toast ${toast.type}`}>{toast.text}</div>}
 
+      {/* ── modals ── */}
       {openLog && (
         <LogModal type={openLog} userId={userId} onClose={() => setOpenLog(null)} onSaved={onSaved} />
       )}
       {showSettings && (
-        <Settings
-          userId={userId}
-          profile={profile}
-          appointment={appointment}
+        <Settings userId={userId} profile={profile} appointment={appointment}
           onClose={() => setShowSettings(false)}
-          onChange={(p, a) => {
-            if (p) setProfile(p)
-            if (a) setAppointment(a)
-            flash('Settings updated.')
-          }}
-        />
+          onChange={(p, a) => { setProfile(p); setAppointment(a) }} />
       )}
     </div>
   )
 }
 
-/* ---------------- medications ---------------- */
+// ── MedsCard ──────────────────────────────────────────────────────────────────
 function MedsCard({ userId, meds, onLogged, flash }) {
-  if (!meds || meds.length === 0) return null
-  async function take(m) {
-    const { error } = await supabase
-      .from('medication_logs')
-      .insert({ user_id: userId, medication_id: m.id })
-    if (error) {
-      flash('Could not log: ' + error.message, 'err')
-      return
-    }
-    flash(`Logged ${m.name}.`)
+  async function log(medId) {
+    await supabase.from('medication_logs').insert({ user_id: userId, medication_id: medId, taken_at: new Date().toISOString() })
+    flash('Medication logged.')
     onLogged()
   }
+  if (!meds?.length) return null
   return (
     <div className="panel">
-      <div className="panel-h">
-        <h2>Medications</h2>
-        <div className="sub">Tap when you take one. Add yours in Settings.</div>
-      </div>
-      <div className="actions">
-        {meds.map((m) => (
-          <button key={m.id} className="action is-med" onClick={() => take(m)}>
-            <span className="action-ic"><Ic name="pill" /></span>
-            <span className="action-tx">{m.name}</span>
-          </button>
+      <div className="panel-h"><h2>Medications</h2></div>
+      <div className="med-list">
+        {meds.map(m => (
+          <div key={m.id} className="med-row">
+            <div className="med-info">
+              <span className="med-name">{m.name}</span>
+              {m.dose && <span className="med-dose">{m.dose}</span>}
+            </div>
+            <button className="btn" onClick={() => log(m.id)}>Taken</button>
+          </div>
         ))}
       </div>
     </div>
   )
 }
 
-/* ---------------- cycle strip (signature element) ---------------- */
-function CycleStrip({ data, appointment }) {
-  const appt = new Date(appointment.appointment_date + 'T12:00:00')
-  const days = weekDays(appt)
-  const today = new Date()
-
-  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-  const startOfAppt = new Date(appt.getFullYear(), appt.getMonth(), appt.getDate())
-  const daysToAppt = Math.round((startOfAppt - startOfToday) / 86400000)
-  const countLabel =
-    daysToAppt < 0 ? 'Past due' : daysToAppt === 0 ? 'Today' : daysToAppt === 1 ? 'Tomorrow' : `${daysToAppt} days`
-
-  function dotsFor(day) {
-    const has = (arr, tf) => arr.some((r) => sameDay(new Date(r[tf]), day))
-    const out = []
-    if (has(data.weights, 'logged_at')) out.push('w')
-    if (has(data.meals, 'eaten_at')) out.push('m')
-    if (has(data.activities, 'started_at')) out.push('a')
-    if (has(data.symptoms, 'occurred_at')) out.push('s')
-    if (has(data.injections, 'injected_at')) out.push('i')
-    return out
-  }
-
-  return (
-    <div className="cycle">
-      <div className="cycle-top">
-        <span className="cycle-title">This cycle</span>
-        <span className="cycle-count">
-          {daysToAppt <= 0 ? 'Appointment' : 'Appointment in'} <b>{countLabel}</b>
-        </span>
-      </div>
-      <div className="cycle-grid">
-        {days.map((day) => {
-          const isToday = sameDay(day, today)
-          const isAppt = sameDay(day, appt)
-          return (
-            <div key={day.toISOString()} className={`cday${isToday ? ' is-today' : ''}${isAppt ? ' is-appt' : ''}`}>
-              {isAppt && <span className="cday-flag">Doctor</span>}
-              <div className="cday-wd">{day.toLocaleDateString(undefined, { weekday: 'short' }).slice(0, 2)}</div>
-              <div className="cday-dd">{day.getDate()}</div>
-              <div className="cday-dots">
-                {dotsFor(day).map((d, i) => (
-                  <span key={i} className={`cdot ${d}`} />
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-/* ---------------- stat tiles ---------------- */
-function StatTiles({ data }) {
-  const sorted = [...data.weights].sort((a, b) => new Date(a.logged_at) - new Date(b.logged_at))
-  const last = sorted[sorted.length - 1]?.weight_kg
-  const base = data.prevWeight ?? sorted[0]?.weight_kg
-  let delta = null
-  if (last != null && base != null) delta = last - base
-
-  const stepDays = data.activities.filter((a) => a.steps != null)
-  const avgSteps = stepDays.length
-    ? Math.round(stepDays.reduce((s, a) => s + a.steps, 0) / stepDays.length)
-    : null
-
-  const tiles = [
-    { label: 'Weight', value: last != null ? last.toFixed(1) : '—', unit: last != null ? 'kg' : '' },
-    {
-      label: 'Change',
-      value: delta != null ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)}` : '—',
-      unit: delta != null ? 'kg' : '',
-      delta: delta == null ? null : delta <= 0 ? 'down' : 'up',
-    },
-    { label: 'Avg steps', value: avgSteps != null ? avgSteps.toLocaleString() : '—', unit: avgSteps != null ? '/day' : '' },
-    { label: 'Side effects', value: String(data.symptoms.length), unit: '' },
-  ]
-  return (
-    <div className="stats">
-      {tiles.map((t) => (
-        <div key={t.label} className="stat">
-          <div className="stat-l">{t.label}</div>
-          <div className="stat-v">
-            {t.value}
-            {t.unit && <span className="stat-u">{t.unit}</span>}
-          </div>
-          {t.delta && (
-            <div className={`stat-d ${t.delta}`}>{t.delta === 'down' ? '▼ down' : '▲ up'}</div>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/* ---------------- weight sparkline (dependency-free SVG) ---------------- */
-function WeightSpark({ weights, prevWeight }) {
-  const points = [...weights].sort((a, b) => new Date(a.logged_at) - new Date(b.logged_at))
-  if (prevWeight != null) {
-    points.unshift({ weight_kg: prevWeight, logged_at: null, baseline: true })
-  }
-  if (points.length < 2) {
-    return <div className="empty">Log your weight a couple of times to see the trend.</div>
-  }
-  const W = 520
-  const H = 170
-  const pad = { l: 40, r: 14, t: 16, b: 22 }
-  const vals = points.map((p) => p.weight_kg)
-  const min = Math.min(...vals) - 0.4
-  const max = Math.max(...vals) + 0.4
-  const x = (i) => pad.l + (i / (points.length - 1)) * (W - pad.l - pad.r)
-  const y = (v) => pad.t + (1 - (v - min) / (max - min || 1)) * (H - pad.t - pad.b)
-  const line = points.map((p, i) => `${x(i)},${y(p.weight_kg)}`).join(' ')
-  const area = `${pad.l},${H - pad.b} ${line} ${x(points.length - 1)},${H - pad.b}`
-  const mid = (min + max) / 2
-
-  return (
-    <svg className="spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
-      <defs>
-        <linearGradient id="sparkfill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#0e7a5c" stopOpacity="0.16" />
-          <stop offset="100%" stopColor="#0e7a5c" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <line className="grid" x1={pad.l} y1={y(max)} x2={W - pad.r} y2={y(max)} />
-      <line className="grid" x1={pad.l} y1={y(mid)} x2={W - pad.r} y2={y(mid)} />
-      <line className="axis" x1={pad.l} y1={H - pad.b} x2={W - pad.r} y2={H - pad.b} />
-      <text className="lbl" x={4} y={y(max) + 3}>{max.toFixed(1)}</text>
-      <text className="lbl" x={4} y={y(min) + 3}>{min.toFixed(1)}</text>
-      <polygon className="area" points={area} />
-      <polyline className="ln" points={line} />
-      {points.map((p, i) => (
-        <circle key={i} className={i === points.length - 1 ? 'pt-last' : 'pt'} cx={x(i)} cy={y(p.weight_kg)} r={i === points.length - 1 ? 4.5 : 3} />
-      ))}
-    </svg>
-  )
-}
-
-/* ---------------- Apple Health import ---------------- */
+// ── AppleHealthCard ───────────────────────────────────────────────────────────
 function AppleHealthCard({ userId, window, onImported, flash }) {
   const fileRef = useRef(null)
   const [busy, setBusy] = useState(false)
-
   async function handleFile(ev) {
-    const file = ev.target.files?.[0]
-    if (!file) return
+    const file = ev.target.files?.[0]; if (!file) return
     setBusy(true)
     try {
       const text = await file.text()
       const parsed = parseAppleHealthExport(text, window.start, window.end)
-      // make re-import idempotent: clear this window's HealthKit rows first
-      await supabase
-        .from('activities')
-        .delete()
-        .eq('user_id', userId)
-        .eq('source', 'healthkit')
-        .gte('started_at', window.start.toISOString())
-        .lte('started_at', window.end.toISOString())
-      await supabase
-        .from('weight_logs')
-        .delete()
-        .eq('user_id', userId)
-        .eq('source', 'healthkit')
-        .gte('logged_at', window.start.toISOString())
-        .lte('logged_at', window.end.toISOString())
-
-      const acts = parsed.activities.map((a) => ({ ...a, user_id: userId }))
-      const wts = parsed.weights.map((w) => ({ ...w, user_id: userId, source: 'healthkit' }))
-      if (acts.length) await supabase.from('activities').insert(acts)
-      if (wts.length) await supabase.from('weight_logs').insert(wts)
-
-      flash(`Imported ${acts.length} activity days and ${wts.length} weight readings from Apple Health.`)
+      await supabase.from('activities').delete().eq('user_id', userId).eq('source', 'healthkit')
+        .gte('started_at', window.start.toISOString()).lte('started_at', window.end.toISOString())
+      await supabase.from('weight_logs').delete().eq('user_id', userId).eq('source', 'healthkit')
+        .gte('logged_at', window.start.toISOString()).lte('logged_at', window.end.toISOString())
+      if (parsed.activities.length) await supabase.from('activities').insert(parsed.activities.map(a => ({ ...a, user_id: userId })))
+      if (parsed.weights.length) await supabase.from('weight_logs').insert(parsed.weights.map(w => ({ ...w, user_id: userId, source: 'healthkit' })))
+      flash(`Imported ${parsed.activities.length} activities and ${parsed.weights.length} weight readings.`)
       onImported()
-    } catch (err) {
-      flash('Could not read that file. Make sure it is the export.xml from Apple Health. ' + err.message, 'err')
-    } finally {
-      setBusy(false)
-      if (fileRef.current) fileRef.current.value = ''
-    }
+    } catch (err) { flash('Could not read file. ' + err.message, 'err') }
+    finally { setBusy(false); if (fileRef.current) fileRef.current.value = '' }
   }
-
   return (
     <div className="panel">
       <div className="panel-h">
         <h2>Apple Watch &amp; Health</h2>
-        <div className="sub">
-          Your Apple Watch already syncs steps, workouts, energy and weight into the iPhone
-          Health app. To pull them in: Health app → your photo → <strong>Export All Health Data</strong>,
-          unzip, and upload the <strong>export.xml</strong>. Only this cycle's data is imported.
-        </div>
+        <div className="sub">Health app → Export All Health Data → upload export.xml</div>
       </div>
       <input ref={fileRef} type="file" accept=".xml" onChange={handleFile} style={{ display: 'none' }} />
       <button className="btn btn-block" onClick={() => fileRef.current?.click()} disabled={busy}>
-        {busy ? 'Reading file…' : 'Sync from Apple Health'}
+        {busy ? 'Reading…' : 'Sync from Apple Health'}
       </button>
     </div>
   )
 }
 
-/* ---------------- recent logs ---------------- */
-function RecentLogs({ data }) {
-  const items = []
-  const push = (arr, tf, render, tag, cls) =>
-    arr.forEach((r) => items.push({ t: new Date(r[tf]), text: render(r), tag, cls }))
-
-  push(data.injections, 'injected_at', (r) => `${r.drug || 'Injection'} ${r.dose_mg ? r.dose_mg + ' mg' : ''}`, 'Inject', 'bloom')
-  push(data.weights.filter((w) => w.source !== 'healthkit'), 'logged_at', (r) => `${r.weight_kg} kg`, 'Weight')
-  push(data.meals, 'eaten_at', (r) => `${r.meal_type}: ${r.description || ''}`, 'Food')
-  push(data.symptoms, 'occurred_at', (r) => `${r.type}${r.severity ? ` (severity ${r.severity})` : ''}`, 'Effect', 'bloom')
-  push(data.activities.filter((a) => a.source !== 'healthkit'), 'started_at', (r) => `${r.type}${r.duration_min ? ` · ${r.duration_min} min` : ''}`, 'Move')
-  push(data.water, 'logged_at', (r) => `${r.amount_ml} ml water`, 'Water')
-
-  items.sort((a, b) => b.t - a.t)
-  const top = items.slice(0, 12)
-
-  return (
-    <div className="panel">
-      <div className="panel-h">
-        <h2>Recent entries</h2>
-        <div className="sub">Your manual logs this cycle. Apple Health data is summarised above and in the PDF.</div>
-      </div>
-      {top.length === 0 ? (
-        <div className="empty">Nothing logged yet this cycle. Use the buttons above to start.</div>
-      ) : (
-        <ul className="feed">
-          {top.map((it, i) => (
-            <li key={i}>
-              <span className={`feed-tag ${it.cls || ''}`}>{it.tag}</span>
-              <span className="feed-main">{it.text}</span>
-              <span className="feed-time">{it.t.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-/* ---------------- settings ---------------- */
+// ── Settings ──────────────────────────────────────────────────────────────────
 function Settings({ userId, profile, appointment, onClose, onChange }) {
   const [name, setName] = useState(profile?.full_name || '')
   const [height, setHeight] = useState(profile?.height_cm || '')
   const [drug, setDrug] = useState(profile?.glp1_drug || '')
+  const [baseline, setBaseline] = useState(profile?.baseline_weight_kg || '')
+  const [treatStart, setTreatStart] = useState(profile?.treatment_start_date || '')
   const [apptDate, setApptDate] = useState(appointment?.appointment_date || '')
   const [clinician, setClinician] = useState(appointment?.clinician || '')
   const [meds, setMeds] = useState([])
@@ -548,89 +630,50 @@ function Settings({ userId, profile, appointment, onClose, onChange }) {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    supabase
-      .from('medications')
-      .select('*')
-      .eq('active', true)
-      .then(({ data }) => setMeds(data || []))
+    supabase.from('medications').select('*').eq('active', true).then(({ data }) => setMeds(data || []))
   }, [])
 
   async function save() {
     setBusy(true)
-    const { data: p } = await supabase
-      .from('profiles')
-      .update({ full_name: name, height_cm: height || null, glp1_drug: drug || null })
-      .eq('id', userId)
-      .select()
-      .single()
+    const { data: p } = await supabase.from('profiles')
+      .update({ full_name: name, height_cm: height || null, glp1_drug: drug || null,
+        baseline_weight_kg: baseline || null, treatment_start_date: treatStart || null })
+      .eq('id', userId).select().single()
     let a = appointment
     if (apptDate) {
-      const { data: au } = await supabase
-        .from('appointments')
+      const { data: au } = await supabase.from('appointments')
         .update({ appointment_date: apptDate, clinician: clinician || null })
-        .eq('id', appointment.id)
-        .select()
-        .single()
+        .eq('id', appointment.id).select().single()
       a = au || appointment
     }
-    setBusy(false)
-    onChange(p, a)
-    onClose()
+    setBusy(false); onChange(p, a); onClose()
   }
 
   async function addMed() {
     if (!newMed.trim()) return
-    const { data } = await supabase
-      .from('medications')
-      .insert({ user_id: userId, name: newMed.trim() })
-      .select()
-      .single()
-    if (data) setMeds((m) => [...m, data])
-    setNewMed('')
+    const { data } = await supabase.from('medications').insert({ user_id: userId, name: newMed.trim() }).select().single()
+    if (data) setMeds(m => [...m, data]); setNewMed('')
   }
 
   return (
     <div className="scrim" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+      <div className="sheet" onClick={e => e.stopPropagation()}>
         <div className="sheet-grip" />
-        <div className="sheet-h">
-          <h3>Settings</h3>
-          <div className="sub">Used on your doctor's report.</div>
-        </div>
+        <div className="sheet-h"><h3>Settings</h3><div className="sub">Treatment details for your report.</div></div>
         <div className="sheet-body">
+          <div className="field"><label>Your name</label><input value={name} onChange={e => setName(e.target.value)} /></div>
+          <div className="field"><label>Height (cm)</label><input type="number" value={height} onChange={e => setHeight(e.target.value)} /></div>
+          <div className="field"><label>GLP-1 medication</label><input value={drug} onChange={e => setDrug(e.target.value)} placeholder="e.g. Semaglutide" /></div>
+          <div className="field"><label>Baseline weight (kg)</label><input type="number" value={baseline} onChange={e => setBaseline(e.target.value)} placeholder="Weight when you started" /></div>
+          <div className="field"><label>Treatment start date</label><input type="date" value={treatStart} onChange={e => setTreatStart(e.target.value)} /></div>
+          <div className="field"><label>Next appointment</label><input type="date" value={apptDate} onChange={e => setApptDate(e.target.value)} /></div>
+          <div className="field"><label>Doctor's name</label><input value={clinician} onChange={e => setClinician(e.target.value)} /></div>
           <div className="field">
-            <label>Your name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="field">
-            <label>Height (cm)</label>
-            <input type="number" inputMode="decimal" value={height} onChange={(e) => setHeight(e.target.value)} />
-          </div>
-          <div className="field">
-            <label>GLP-1 medication</label>
-            <input value={drug} onChange={(e) => setDrug(e.target.value)} placeholder="e.g. Semaglutide" />
-          </div>
-          <div className="field">
-            <label>Next appointment</label>
-            <input type="date" value={apptDate} onChange={(e) => setApptDate(e.target.value)} />
-          </div>
-          <div className="field">
-            <label>Doctor's name (optional)</label>
-            <input value={clinician} onChange={(e) => setClinician(e.target.value)} />
-          </div>
-
-          <div className="field">
-            <label>Your other medications</label>
-            {meds.length > 0 && (
-              <ul className="feed" style={{ marginBottom: 10 }}>
-                {meds.map((m) => (
-                  <li key={m.id}><span className="feed-main">{m.name}</span></li>
-                ))}
-              </ul>
-            )}
+            <label>Other medications</label>
+            {meds.length > 0 && <ul className="feed" style={{ marginBottom: 10 }}>{meds.map(m => <li key={m.id}><span className="feed-main">{m.name}</span></li>)}</ul>}
             <div style={{ display: 'flex', gap: 8 }}>
-              <input value={newMed} onChange={(e) => setNewMed(e.target.value)} placeholder="Add a medication"
-                onKeyDown={(e) => e.key === 'Enter' && addMed()} />
+              <input value={newMed} onChange={e => setNewMed(e.target.value)} placeholder="Add medication"
+                onKeyDown={e => e.key === 'Enter' && addMed()} />
               <button className="btn" style={{ flex: '0 0 auto' }} onClick={addMed}>Add</button>
             </div>
           </div>

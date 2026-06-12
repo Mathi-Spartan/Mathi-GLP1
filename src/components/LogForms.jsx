@@ -78,6 +78,27 @@ export const LOG_TYPES = {
       { key: 'notes', label: 'What did you crave? (optional)', type: 'textarea', placeholder: 'e.g. sweets, late-night snacking, carbs' },
     ],
   },
+  sleep: {
+    title: 'Log sleep',
+    hint: 'GLP-1 can affect sleep. Track it to show your doctor the full picture.',
+    table: 'sleep_logs',
+    timeField: 'logged_at',
+    fields: [
+      { key: 'hours', label: 'Hours slept', type: 'number', required: true, placeholder: 'e.g. 7.5' },
+      { key: 'quality', label: 'Sleep quality', type: 'severity', options: ['1', '2', '3', '4', '5'] },
+      { key: 'notes', label: 'Notes (optional)', type: 'textarea', placeholder: 'e.g. woke up twice, vivid dreams' },
+    ],
+  },
+  mood: {
+    title: 'Log energy & mood',
+    hint: 'How are you feeling today overall?',
+    table: 'mood_logs',
+    timeField: 'logged_at',
+    fields: [
+      { key: 'score', label: 'How are you feeling?', type: 'severity', options: ['1', '2', '3', '4', '5'] },
+      { key: 'notes', label: 'Notes (optional)', type: 'textarea', placeholder: 'e.g. tired, energetic, anxious' },
+    ],
+  },
 }
 
 const NUMERIC = new Set(['number'])

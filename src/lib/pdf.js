@@ -2,580 +2,592 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { fmtDateLong, fmtDate } from './week.js'
 
-/* ============================================================
-   GLP-1 Progress Report  —  doctor-facing weekly export
-   Signature: two parallel "journeys" a GLP-1 patient lives —
-   weight toward goal, and dose up the titration ladder —
-   gated by GI tolerability. Same call contract as before:
-     generateWeeklyPDF({ profile, appointment, window, data })
-   No Supabase / data-shape changes.
-   ============================================================ */
+// ── palette ───────────────────────────────────────────────────────────────────
+const INK      = [15, 20, 18]
+const GRAPHITE = [60, 75, 70]
+const MIST     = [130, 148, 142]
+const FAINT    = [180, 192, 187]
+const HAIR     = [225, 232, 229]
+const PAPER    = [250, 252, 251]
+const WHITE    = [255, 255, 255]
+const JADE     = [13, 124, 92]
+const JADE_D   = [8, 80, 59]
+const JADE_W   = [225, 245, 238]
+const CLAY     = [194, 79, 46]
+const CLAY_D   = [158, 58, 31]
+const CLAY_W   = [250, 232, 227]
+const AMBER    = [186, 117, 23]
+const AMBER_W  = [250, 238, 218]
+const BLUE     = [24, 95, 165]
+const BLUE_W   = [230, 241, 251]
+const PURPLE   = [83, 74, 183]
+const PURPLE_W = [238, 237, 254]
+const DARK     = [10, 26, 20]
 
-// ---- palette: clinical, calm, restrained ----
-const INK = [19, 33, 28]
-const GRAPHITE = [70, 85, 79]
-const MIST = [139, 154, 147]
-const FAINT = [176, 189, 183]
-const HAIR = [228, 234, 231]
-const HAIR2 = [214, 224, 219]
-const PAPER = [251, 252, 251]
-const CARD = [255, 255, 255]
-const VEIL = [243, 247, 245]
-const JADE = [13, 124, 92]
-const JADE_DEEP = [9, 92, 68]
-const JADE_WASH = [228, 242, 236]
-const CLAY = [194, 79, 46]
-const CLAY_DEEP = [158, 58, 31]
-const CLAY_WASH = [248, 232, 226]
-const AMBER = [176, 124, 28]
-const AMBER_WASH = [248, 240, 222]
-const GOLD = [161, 120, 38]
-const WHITE = [255, 255, 255]
-
-// CP1252-safe text (built-in font is Latin-1 + a few typographic glyphs)
-const KEEP1252 =
-  '\u20AC\u201A\u0192\u201E\u2026\u2020\u2021\u02C6\u2030\u0160\u2039\u0152\u017D' +
-  '\u2018\u2019\u201C\u201D\u2022\u2013\u2014\u02DC\u2122\u0161\u203A\u0153\u017E\u0178'
 function clean(s) {
   if (s == null) return ''
-  const norm = String(s)
-    .replace(/\u2212/g, '-').replace(/\u2191/g, 'up ').replace(/\u2193/g, 'down ')
-    .replace(/[\u2192\u27a1]/g, '-> ')
-  let out = ''
-  for (const ch of norm) {
-    const c = ch.charCodeAt(0)
-    out += c <= 0xff || KEEP1252.indexOf(ch) >= 0 ? ch : '?'
-  }
-  return out
+  return String(s).replace(/[^\x00-\xFF]/g, '?')
 }
-function n(v, d = 0) {
-  if (v === null || v === undefined || v === '' || isNaN(v)) return '—'
+function n(v, d = 1) {
+  if (v == null || isNaN(v)) return '—'
   return Number(v).toFixed(d)
-}
-function int(v) {
-  if (v === null || v === undefined || isNaN(v)) return '—'
-  return Math.round(Number(v)).toLocaleString()
-}
-function fmtTime(iso) {
-  return new Date(iso).toLocaleString(undefined, {
-    weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-  })
 }
 function ageFrom(dob) {
   if (!dob) return null
-  const d = new Date(dob)
-  if (isNaN(d)) return null
-  return Math.floor((Date.now() - d.getTime()) / (365.25 * 864e5))
+  return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 864e5))
 }
-
-// Standard titration ladders (mg) by molecule; falls back to observed doses.
-function ladderFor(drug, observed) {
+function ladderFor(drug) {
   const s = (drug || '').toLowerCase()
-  if (s.includes('tirzep') || s.includes('mounjaro') || s.includes('zepbound'))
-    return { name: 'Tirzepatide', steps: [2.5, 5, 7.5, 10, 12.5, 15] }
-  if (s.includes('semaglu') || s.includes('ozempic') || s.includes('wegovy'))
-    return { name: 'Semaglutide', steps: [0.25, 0.5, 1, 1.7, 2.4] }
-  if (s.includes('lira') || s.includes('saxenda') || s.includes('victoza'))
-    return { name: 'Liraglutide', steps: [0.6, 1.2, 1.8, 2.4, 3.0] }
-  if (s.includes('dulagl') || s.includes('trulicity'))
-    return { name: 'Dulaglutide', steps: [0.75, 1.5, 3, 4.5] }
-  const uniq = [...new Set(observed.filter((d) => d != null))].sort((a, b) => a - b)
-  return { name: drug ? clean(drug) : 'GLP-1', steps: uniq.length ? uniq : [] }
+  if (s.includes('tirzep') || s.includes('mounjaro')) return { name: 'Tirzepatide', steps: [2.5, 5, 7.5, 10, 12.5, 15] }
+  if (s.includes('semaglu') || s.includes('ozempic') || s.includes('wegovy')) return { name: 'Semaglutide', steps: [0.25, 0.5, 1, 1.7, 2.4] }
+  if (s.includes('lira') || s.includes('saxenda')) return { name: 'Liraglutide', steps: [0.6, 1.2, 1.8, 2.4, 3.0] }
+  return { name: clean(drug) || 'GLP-1', steps: [] }
 }
 
-const GI_TYPES = ['nausea', 'vomit', 'gi', 'stomach', 'constip', 'diarr', 'reflux', 'bloat']
-function isGI(t) {
-  const s = (t || '').toLowerCase()
-  return GI_TYPES.some((g) => s.includes(g))
+function calcScore(data, profile) {
+  let score = 0, total = 0
+  const add = (pts, max) => { score += Math.min(pts, max); total += max }
+  const weights = data.weights || []
+  const lastW = weights.length ? Number(weights[weights.length - 1].weight_kg) : null
+  const baseW = profile?.baseline_weight_kg ? Number(profile.baseline_weight_kg) : null
+  if (lastW && baseW && lastW < baseW) add(15, 15); else add(0, 15)
+  const sideFx = (data.symptoms || []).filter(s => s.type !== 'craving')
+  const peakSev = sideFx.reduce((m, s) => Math.max(m, Number(s.severity) || 0), 0)
+  add(peakSev <= 1 ? 15 : peakSev <= 2 ? 10 : peakSev <= 3 ? 5 : 0, 15)
+  const cravings = (data.symptoms || []).filter(s => s.type === 'craving')
+  const avgCrav = cravings.length ? cravings.reduce((a, c) => a + (Number(c.severity) || 0), 0) / cravings.length : null
+  add(avgCrav == null ? 10 : avgCrav <= 1 ? 15 : avgCrav <= 2 ? 12 : avgCrav <= 3 ? 8 : 4, 15)
+  const totalProt = (data.meals || []).reduce((s, m) => s + (Number(m.protein_g) || 0), 0)
+  const protPerKg = lastW && totalProt ? totalProt / 7 / lastW : null
+  add(protPerKg == null ? 5 : protPerKg >= 1.2 ? 15 : protPerKg >= 0.8 ? 8 : 3, 15)
+  const totalMin = (data.activities || []).reduce((s, a) => s + (Number(a.duration_min) || 0), 0)
+  add(totalMin >= 150 ? 15 : totalMin >= 60 ? 10 : totalMin >= 30 ? 6 : 0, 15)
+  const avgSleep = (data.sleep || []).length ? (data.sleep || []).reduce((s, sl) => s + (Number(sl.hours) || 0), 0) / data.sleep.length : null
+  add(avgSleep == null ? 5 : avgSleep >= 7 && avgSleep <= 9 ? 10 : avgSleep >= 6 ? 7 : 3, 10)
+  const avgMood = (data.mood || []).length ? (data.mood || []).reduce((s, m) => s + (Number(m.score) || 0), 0) / data.mood.length : null
+  add(avgMood == null ? 5 : avgMood >= 3 ? 10 : avgMood >= 2 ? 6 : 3, 10)
+  add((data.injections || []).length > 0 ? 5 : 0, 5)
+  return total ? Math.round((score / total) * 100) : 0
 }
 
 export function buildReportDoc({ profile, appointment, window, data }) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4', compress: true })
   const PW = doc.internal.pageSize.getWidth()
   const PH = doc.internal.pageSize.getHeight()
-  const M = 40
+  const M = 36
   const CW = PW - M * 2
   let y = 0
 
-  // ---------------- derive ----------------
+  // ── derived data ──────────────────────────────────────────────────────────
   const weights = [...(data.weights || [])].sort((a, b) => new Date(a.logged_at) - new Date(b.logged_at))
-  const firstW = weights[0]?.weight_kg ?? null
-  const lastW = weights[weights.length - 1]?.weight_kg ?? null
-  const cycleStartW = data.prevWeight ?? firstW
-  const baselineW = profile?.baseline_weight_kg ?? null
-  const height = profile?.height_cm ?? null
-  const age = ageFrom(profile?.dob)
-
-  const spanDays = Math.max(1, Math.round((new Date(window.end) - new Date(window.start)) / 864e5))
-  const dCycle = lastW != null && cycleStartW != null ? lastW - cycleStartW : null
-  const weeklyRate = dCycle != null ? dCycle / (spanDays / 7) : null
-
-  const bmi = lastW && height ? lastW / Math.pow(height / 100, 2) : null
-  const bmiBand = bmi == null ? '' : bmi < 18.5 ? 'Underweight' : bmi < 25 ? 'Healthy' : bmi < 30 ? 'Overweight' : 'Obese'
-  // goal = weight at upper-healthy BMI 25 (clinical default; no goal stored)
-  const goalW = height ? 24.9 * Math.pow(height / 100, 2) : null
-  const lostVsBase = baselineW != null && lastW != null ? baselineW - lastW : null
-  const pctVsBase = baselineW ? (lostVsBase / baselineW) * 100 : null
-  const toGo = goalW != null && lastW != null ? lastW - goalW : null
-  const journeyTotal = baselineW != null && goalW != null ? baselineW - goalW : null
-  const journeyPct = journeyTotal && journeyTotal > 0 ? Math.max(0, Math.min(1, (baselineW - lastW) / journeyTotal)) : null
-  const weeksToGoal = toGo != null && weeklyRate != null && weeklyRate < -0.05 ? toGo / -weeklyRate : null
+  const lastW = weights.length ? Number(weights[weights.length - 1].weight_kg) : null
+  const baseW = profile?.baseline_weight_kg ? Number(profile.baseline_weight_kg) : null
+  const goalW = profile?.height_cm ? 24.9 * Math.pow(Number(profile.height_cm) / 100, 2) : null
+  const lostTotal = baseW && lastW ? baseW - lastW : null
+  const journeyPct = baseW && goalW && lastW ? Math.max(0, Math.min(1, (baseW - lastW) / (baseW - goalW))) : null
+  const cycleStartW = data.prevWeight ?? (weights[0]?.weight_kg ? Number(weights[0].weight_kg) : null)
+  const deltaW = lastW && cycleStartW ? lastW - cycleStartW : null
+  const bmi = lastW && profile?.height_cm ? lastW / Math.pow(Number(profile.height_cm) / 100, 2) : null
 
   const inj = [...(data.injections || [])].sort((a, b) => new Date(a.injected_at) - new Date(b.injected_at))
-  const doseObs = inj.map((i) => (i.dose_mg != null ? Number(i.dose_mg) : null))
-  const lastDose = [...doseObs].reverse().find((d) => d != null) ?? null
-  const lastDrug = [...inj].reverse().find((i) => i.drug)?.drug ?? profile?.glp1_drug ?? null
-  const ladder = ladderFor(lastDrug, doseObs)
-  const curRung = lastDose != null ? ladder.steps.findIndex((s) => Math.abs(s - lastDose) < 1e-6) : -1
+  const lastInj = inj.length ? inj[inj.length - 1] : null
+  const lastDose = lastInj?.dose_mg ? Number(lastInj.dose_mg) : null
+  const lastDrug = lastInj?.drug || profile?.glp1_drug || ''
+  const ladder = ladderFor(lastDrug)
+  const curRung = lastDose != null ? ladder.steps.findIndex(s => Math.abs(s - lastDose) < 1e-6) : -1
   const nextDose = curRung >= 0 && curRung < ladder.steps.length - 1 ? ladder.steps[curRung + 1] : null
 
-  const allSymp = data.symptoms || []
-  const sideFx = allSymp.filter((s) => (s.type || '').toLowerCase() !== 'craving')
-  const cravings = allSymp.filter((s) => (s.type || '').toLowerCase() === 'craving')
-  const giFx = sideFx.filter((s) => isGI(s.type))
+  const sideFx = (data.symptoms || []).filter(s => (s.type || '').toLowerCase() !== 'craving')
+  const cravings = (data.symptoms || []).filter(s => (s.type || '').toLowerCase() === 'craving')
   const peakSev = sideFx.reduce((m, s) => Math.max(m, Number(s.severity) || 0), 0)
-  const tol = sideFx.length === 0 ? { label: 'No symptoms', tone: JADE, k: 0 }
-    : peakSev >= 4 ? { label: 'Significant', tone: CLAY, k: 3 }
-    : peakSev === 3 ? { label: 'Moderate', tone: AMBER, k: 2 }
-    : { label: 'Mild', tone: JADE, k: 1 }
-
+  const giClear = peakSev <= 2
   const avgCraving = cravings.length ? cravings.reduce((a, c) => a + (Number(c.severity) || 0), 0) / cravings.length : null
-  // craving trend: first half vs second half of the cycle
-  let cravingTrend = null
-  if (cravings.length >= 2) {
+  const cravingTrend = (() => {
+    if (cravings.length < 2) return null
     const sorted = [...cravings].sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at))
     const mid = Math.floor(sorted.length / 2)
-    const avg = (arr) => arr.reduce((s, c) => s + (Number(c.severity) || 0), 0) / arr.length
-    cravingTrend = avg(sorted.slice(mid)) - avg(sorted.slice(0, mid))
-  }
+    const avg = arr => arr.reduce((s, c) => s + (Number(c.severity) || 0), 0) / arr.length
+    return avg(sorted.slice(mid)) - avg(sorted.slice(0, mid))
+  })()
 
   const meals = data.meals || []
   const totalProt = meals.reduce((s, m) => s + (Number(m.protein_g) || 0), 0)
   const totalCal = meals.reduce((s, m) => s + (Number(m.calories) || 0), 0)
-  const protPerDay = meals.length ? totalProt / spanDays : null
-  const protPerKg = protPerDay != null && lastW ? protPerDay / lastW : null
-
+  const protPerKg = lastW && totalProt ? totalProt / 7 / lastW : null
+  const totalWater = (data.water || []).reduce((s, w) => s + (Number(w.amount_ml) || 0), 0)
+  const avgWater = totalWater / 7 / 1000
   const acts = data.activities || []
-  const stepRows = acts.filter((a) => a.steps != null)
-  const totalSteps = stepRows.reduce((s, a) => s + (a.steps || 0), 0)
-  const avgSteps = stepRows.length ? Math.round(totalSteps / spanDays) : null
-  const totalEnergy = acts.reduce((s, a) => s + (Number(a.energy_kcal) || 0), 0)
-  const totalActiveMin = acts.reduce((s, a) => s + (Number(a.duration_min) || 0), 0)
-  const strengthMin = acts.filter((a) => /strength|weight|resist/i.test(a.type || '')).reduce((s, a) => s + (Number(a.duration_min) || 0), 0)
+  const totalMin = acts.reduce((s, a) => s + (Number(a.duration_min) || 0), 0)
+  const resistMin = acts.filter(a => /strength|weight|resist|barbell/i.test(a.type || '')).reduce((s, a) => s + (Number(a.duration_min) || 0), 0)
+  const avgSleep = (data.sleep || []).length ? (data.sleep || []).reduce((s, sl) => s + (Number(sl.hours) || 0), 0) / data.sleep.length : null
+  const avgMood = (data.mood || []).length ? (data.mood || []).reduce((s, m) => s + (Number(m.score) || 0), 0) / data.mood.length : null
 
-  const water = data.water || []
-  const totalWater = water.reduce((s, w) => s + (Number(w.amount_ml) || 0), 0)
-  const avgWater = water.length ? totalWater / spanDays : null
+  const treatStart = profile?.treatment_start_date ? new Date(profile.treatment_start_date) : null
+  const weekNum = treatStart ? Math.ceil((new Date() - treatStart) / (7 * 24 * 60 * 60 * 1000)) : null
+  const score = calcScore(data, profile)
 
-  // ============================================================
-  //  MASTHEAD
-  // ============================================================
-  doc.setFillColor(...JADE)
-  doc.roundedRect(M, 36, 24, 24, 6, 6, 'F')
-  doc.setDrawColor(...WHITE); doc.setLineWidth(1.5); doc.setLineJoin('round')
-  doc.lines([[2.5, 0], [1.7, -5], [2.6, 10], [2.6, -7.5], [1.7, 2.5], [2.5, 0]], M + 4.5, 48, [1, 1])
-  doc.setLineWidth(1)
-
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...INK)
-  doc.text('GLP-1 Progress Report', M + 34, 46)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...MIST)
-  doc.text(`${clean(profile?.full_name) || 'Patient'}   ·   ${fmtDateLong(window.start)} – ${fmtDateLong(window.end)}`, M + 34, 58)
-
-  const rx = PW - M
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(...FAINT)
-  doc.text('NEXT REVIEW', rx, 42, { align: 'right' })
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...INK)
-  doc.text(fmtDateLong(appointment.appointment_date), rx, 53, { align: 'right' })
-  if (appointment?.clinician) {
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...MIST)
-    doc.text(clean(appointment.clinician), rx, 63, { align: 'right' })
+  // ── grade helper ──────────────────────────────────────────────────────────
+  function grade(val, good, warn) {
+    if (val == null) return { g: '—', c: MIST }
+    if (val >= good) return { g: 'A', c: JADE }
+    if (val >= warn) return { g: 'B', c: AMBER }
+    return { g: 'C', c: CLAY }
   }
-  doc.setDrawColor(...HAIR); doc.setLineWidth(0.6); doc.line(M, 72, PW - M, 72)
-  y = 88
-
-  // ============================================================
-  //  HERO — WEIGHT JOURNEY (signature 1)
-  // ============================================================
-  const heroH = 150
-  doc.setFillColor(...CARD); doc.setDrawColor(...HAIR); doc.setLineWidth(0.8)
-  doc.roundedRect(M, y, CW, heroH, 8, 8, 'FD')
-  const padX = 20
-  const leftW = CW * 0.56
-  // eyebrow
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...MIST)
-  doc.text('W E I G H T   J O U R N E Y', M + padX, y + 22)
-  // current weight, large
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(40); doc.setTextColor(...INK)
-  doc.text(lastW != null ? `${n(lastW, 1)}` : '—', M + padX, y + 60)
-  const wW = doc.getTextWidth(lastW != null ? `${n(lastW, 1)}` : '—')
-  doc.setFontSize(12); doc.setTextColor(...MIST)
-  doc.text('kg', M + padX + wW + 6, y + 60)
-  // change badges
-  let bx = M + padX
-  const by = y + 76
-  function badge(text, tone, wash) {
-    const w = doc.getTextWidth(text) + 16
-    doc.setFillColor(...wash); doc.roundedRect(bx, by, w, 16, 8, 8, 'F')
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...tone)
-    doc.text(text, bx + 8, by + 11)
-    bx += w + 6
-  }
-  if (dCycle != null) badge(`${dCycle <= 0 ? 'Down' : 'Up'} ${Math.abs(dCycle).toFixed(1)} kg this week`, dCycle <= 0 ? JADE_DEEP : CLAY_DEEP, dCycle <= 0 ? JADE_WASH : CLAY_WASH)
-  if (pctVsBase != null) badge(`${pctVsBase >= 0 ? '-' : '+'}${Math.abs(pctVsBase).toFixed(1)}% from baseline`, JADE_DEEP, JADE_WASH)
-
-  // journey track baseline -> goal
-  const trackX = M + padX
-  const trackW = leftW - padX - 6
-  const trackY = y + heroH - 34
-  if (baselineW != null && goalW != null && lastW != null && journeyPct != null) {
-    doc.setFillColor(...VEIL); doc.roundedRect(trackX, trackY, trackW, 9, 4.5, 4.5, 'F')
-    const fillW = Math.max(4, trackW * journeyPct)
-    doc.setFillColor(...JADE); doc.roundedRect(trackX, trackY, fillW, 9, 4.5, 4.5, 'F')
-    // current marker
-    const mx = trackX + fillW
-    doc.setFillColor(...WHITE); doc.setDrawColor(...JADE_DEEP); doc.setLineWidth(1.6)
-    doc.circle(mx, trackY + 4.5, 4.6, 'FD')
-    // end labels
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...GRAPHITE)
-    doc.text(`${baselineW.toFixed(1)}`, trackX, trackY - 6)
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.3); doc.setTextColor(...MIST)
-    doc.text('baseline', trackX, trackY + 19)
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...GRAPHITE)
-    doc.text(`${goalW.toFixed(1)}`, trackX + trackW, trackY - 6, { align: 'right' })
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.3); doc.setTextColor(...MIST)
-    doc.text('goal · BMI 25', trackX + trackW, trackY + 19, { align: 'right' })
-    // mid annotation
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...JADE_DEEP)
-    const mid = `${lostVsBase != null ? lostVsBase.toFixed(1) : '—'} kg lost  ·  ${Math.round(journeyPct * 100)}% to goal  ·  ${toGo != null ? toGo.toFixed(1) : '—'} kg to go`
-    doc.text(mid, trackX + trackW / 2, trackY + 19, { align: 'center' })
-  } else {
-    doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5); doc.setTextColor(...MIST)
-    doc.text('Add height and baseline weight in settings to chart the journey to goal.', trackX, trackY + 4)
+  function gradeRev(val, bad, worse) { // lower is better
+    if (val == null) return { g: '—', c: MIST }
+    if (val <= bad) return { g: 'A', c: JADE }
+    if (val <= worse) return { g: 'B', c: AMBER }
+    return { g: 'C', c: CLAY }
   }
 
-  // right: weekly trend mini-chart
-  const rX = M + leftW + 6
-  const rW = CW - leftW - padX - 6
-  doc.setDrawColor(...HAIR); doc.setLineWidth(0.6); doc.line(M + leftW, y + 16, M + leftW, y + heroH - 16)
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...MIST)
-  doc.text('T H I S   W E E K', rX, y + 22)
-  const pts = weights.map((w) => ({ v: Number(w.weight_kg), t: new Date(w.logged_at) }))
-  if (pts.length >= 2) {
-    const plot = { x: rX, y: y + 34, w: rW, h: heroH - 78 }
-    const vals = pts.map((p) => p.v).concat(baselineW != null ? [baselineW] : [])
-    let mn = Math.min(...vals) - 0.4, mx = Math.max(...vals) + 0.4
-    if (mx - mn < 1) { mx += 0.5; mn -= 0.5 }
-    const px = (i) => plot.x + (i / (pts.length - 1)) * plot.w
-    const py = (v) => plot.y + (1 - (v - mn) / (mx - mn)) * plot.h
-    if (baselineW != null && baselineW >= mn && baselineW <= mx) {
-      doc.setDrawColor(...FAINT); doc.setLineWidth(0.7); doc.setLineDashPattern([2, 2], 0)
-      doc.line(plot.x, py(baselineW), plot.x + plot.w, py(baselineW)); doc.setLineDashPattern([], 0)
-    }
-    const bottom = plot.y + plot.h
-    for (let i = 1; i < pts.length; i++) {
-      doc.setFillColor(...JADE_WASH)
-      doc.triangle(px(i - 1), py(pts[i - 1].v), px(i), py(pts[i].v), px(i - 1), bottom, 'F')
-      doc.triangle(px(i), py(pts[i].v), px(i), bottom, px(i - 1), bottom, 'F')
-    }
-    doc.setDrawColor(...JADE); doc.setLineWidth(2)
-    for (let i = 1; i < pts.length; i++) doc.line(px(i - 1), py(pts[i - 1].v), px(i), py(pts[i].v))
-    pts.forEach((p, i) => {
-      const last = i === pts.length - 1
-      doc.setFillColor(...(last ? JADE : WHITE)); doc.setDrawColor(...JADE); doc.setLineWidth(1.1)
-      doc.circle(px(i), py(p.v), last ? 2.8 : 1.7, last ? 'F' : 'FD')
-    })
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.2); doc.setTextColor(...MIST)
-    doc.text(fmtDate(pts[0].t), plot.x, bottom + 11)
-    doc.text(fmtDate(pts[pts.length - 1].t), plot.x + plot.w, bottom + 11, { align: 'right' })
-  } else {
-    doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(...MIST)
-    doc.text('Not enough readings', rX, y + heroH / 2)
+  // ── drawing helpers ───────────────────────────────────────────────────────
+  function bar(x, ty, w, h, pct, fg, bg = HAIR) {
+    doc.setFillColor(...bg); doc.roundedRect(x, ty, w, h, h / 2, h / 2, 'F')
+    if (pct > 0) { doc.setFillColor(...fg); doc.roundedRect(x, ty, Math.max(h, w * Math.min(1, pct)), h, h / 2, h / 2, 'F') }
   }
-  y += heroH + 14
+  function gradeCircle(x, ty, r, g, color) {
+    doc.setFillColor(...(g === 'A' ? JADE_W : g === 'B' ? AMBER_W : g === 'C' ? CLAY_W : HAIR))
+    doc.circle(x, ty, r, 'F')
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...color)
+    doc.text(g, x, ty + 3.5, { align: 'center' })
+  }
 
-  // ============================================================
-  //  DOSE TITRATION LADDER (signature 2)
-  // ============================================================
-  const ladH = 70
-  doc.setFillColor(...CARD); doc.setDrawColor(...HAIR); doc.setLineWidth(0.8)
-  doc.roundedRect(M, y, CW, ladH, 8, 8, 'FD')
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...MIST)
-  doc.text('D O S E   T I T R A T I O N', M + 20, y + 19)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...GRAPHITE)
-  doc.text(ladder.name, M + 20 + doc.getTextWidth('D O S E   T I T R A T I O N') + 10, y + 19)
-  // right: next step note
-  if (nextDose != null) {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...JADE_DEEP)
-    doc.text(`Next step: ${nextDose} mg`, PW - M - 20, y + 19, { align: 'right' })
-  } else if (lastDose != null) {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...JADE_DEEP)
-    doc.text('At maintenance dose', PW - M - 20, y + 19, { align: 'right' })
-  }
-  // rungs
-  if (ladder.steps.length) {
-    const lx = M + 24
-    const lw = CW - 48
-    const ly = y + 44
-    const gap = lw / (ladder.steps.length - 1 || 1)
-    // base line
-    doc.setDrawColor(...HAIR2); doc.setLineWidth(1.4); doc.line(lx, ly, lx + lw, ly)
-    if (curRung > 0) { doc.setDrawColor(...JADE); doc.setLineWidth(2.4); doc.line(lx, ly, lx + (ladder.steps.length === 1 ? 0 : gap * curRung), ly) }
-    ladder.steps.forEach((s, i) => {
-      const cxp = ladder.steps.length === 1 ? lx + lw / 2 : lx + gap * i
-      const done = curRung >= 0 && i <= curRung
-      const cur = i === curRung
-      if (cur) { doc.setFillColor(...JADE); doc.setDrawColor(...JADE) }
-      else if (done) { doc.setFillColor(...JADE); doc.setDrawColor(...JADE) }
-      else { doc.setFillColor(...WHITE); doc.setDrawColor(...HAIR2) }
-      doc.setLineWidth(1.2); doc.circle(cxp, ly, cur ? 5.5 : 3.4, 'FD')
-      if (cur) { doc.setFillColor(...WHITE); doc.circle(cxp, ly, 2, 'F') }
-      doc.setFont('helvetica', cur ? 'bold' : 'normal'); doc.setFontSize(cur ? 8.5 : 7.5)
-      doc.setTextColor(...(cur ? INK : done ? JADE_DEEP : MIST))
-      doc.text(`${s}`, cxp, ly + 16, { align: 'center' })
-    })
-  } else {
-    doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(...MIST)
-    doc.text('No dose recorded this cycle.', M + 24, y + 44)
-  }
-  y += ladH + 14
+  // ═════════════════════════════════════════════════════════════════════════
+  //  PAGE 1 — MASTHEAD + SCORE + SCORECARD
+  // ═════════════════════════════════════════════════════════════════════════
 
-  // ============================================================
-  //  GLP-1 VITALS  — refined stat blocks (2 x 4)
-  // ============================================================
-  const vitals = [
-    { l: 'RATE OF LOSS', v: weeklyRate != null ? `${weeklyRate > 0 ? '+' : ''}${weeklyRate.toFixed(2)}` : '—', u: 'kg / wk', tone: weeklyRate == null ? INK : weeklyRate <= 0 ? JADE : CLAY },
-    { l: 'BMI', v: bmi != null ? n(bmi, 1) : '—', u: bmiBand },
-    { l: 'TIME TO GOAL', v: weeksToGoal != null ? `${Math.round(weeksToGoal)}` : '—', u: weeksToGoal != null ? 'weeks*' : 'at goal' },
-    { l: 'GI TOLERABILITY', v: tol.label, tone: tol.tone, small: true, u: giFx.length ? `${giFx.length} event${giFx.length > 1 ? 's' : ''}` : '' },
-    { l: 'PROTEIN', v: protPerKg != null ? n(protPerKg, 2) : '—', u: 'g / kg/day', tone: protPerKg == null ? INK : protPerKg >= 1.2 ? JADE : AMBER },
-    { l: 'CRAVINGS', v: avgCraving != null ? `${avgCraving.toFixed(1)}` : '—', u: avgCraving != null ? 'avg / 5' : 'none', tone: cravingTrend == null ? INK : cravingTrend <= 0 ? JADE : CLAY },
-    { l: 'STEPS / DAY', v: avgSteps != null ? int(avgSteps) : '—', u: 'avg' },
-    { l: 'HYDRATION', v: avgWater != null ? (avgWater / 1000).toFixed(1) : '—', u: 'L / day' },
+  // dark header band
+  doc.setFillColor(...DARK)
+  doc.rect(0, 0, PW, 88, 'F')
+
+  // patient name
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(...WHITE)
+  doc.text(clean(profile?.full_name) || 'Patient', M, 34)
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(180, 200, 193)
+  const meta = [
+    clean(profile?.full_name ? '' : ''),
+    clean(lastDrug) || 'GLP-1',
+    weekNum ? `Week ${weekNum} of treatment` : '',
+    `${fmtDate(window.start)} – ${fmtDate(window.end)}`,
+  ].filter(Boolean).join('  ·  ')
+  doc.text(meta, M, 48)
+
+  // health score circle
+  const cx = PW - M - 36, cy = 44, cr = 28
+  doc.setFillColor(...JADE); doc.circle(cx, cy, cr, 'F')
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(...WHITE)
+  doc.text(String(score), cx, cy + 6, { align: 'center' })
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(180, 230, 210)
+  doc.text('HEALTH SCORE', cx, cy + 18, { align: 'center' })
+
+  // appointment info
+  const ax = PW - M - 80
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(150, 180, 170)
+  doc.text('NEXT APPOINTMENT', ax, 32, { align: 'right' })
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...WHITE)
+  doc.text(fmtDateLong(appointment.appointment_date), ax, 44, { align: 'right' })
+  if (appointment.clinician) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(150, 180, 170)
+    doc.text(clean(appointment.clinician), ax, 56, { align: 'right' })
+  }
+
+  // week badge
+  if (weekNum) {
+    doc.setFillColor(...JADE); doc.roundedRect(M, 58, 56, 16, 8, 8, 'F')
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...WHITE)
+    doc.text(`Week ${weekNum}`, M + 28, 69, { align: 'center' })
+  }
+
+  y = 104
+
+  // ── 6-stat KPI band ───────────────────────────────────────────────────────
+  const kpis = [
+    { l: 'Weight', v: lastW ? `${n(lastW, 1)}` : '—', u: 'kg', sub: deltaW != null ? `${deltaW <= 0 ? '▼' : '▲'} ${Math.abs(deltaW).toFixed(1)} kg` : '', c: deltaW != null && deltaW <= 0 ? JADE : CLAY },
+    { l: 'Total lost', v: lostTotal != null ? `${lostTotal.toFixed(1)}` : '—', u: 'kg', sub: journeyPct != null ? `${(journeyPct * 100).toFixed(0)}% to goal` : '', c: JADE },
+    { l: 'Dose', v: lastDose ? String(lastDose) : '—', u: 'mg', sub: curRung >= 0 ? `Step ${curRung + 1}/${ladder.steps.length}` : '', c: INK },
+    { l: 'GI events', v: String(sideFx.length), u: '', sub: giClear ? 'Escalation ready' : `Peak ${peakSev}/5`, c: giClear ? JADE : CLAY },
+    { l: 'Craving avg', v: avgCraving != null ? avgCraving.toFixed(1) : '—', u: '/5', sub: cravingTrend != null ? (cravingTrend <= 0 ? 'Easing' : 'Rising ▲') : '', c: avgCraving != null && avgCraving > 2 ? AMBER : JADE },
+    { l: 'Sleep avg', v: avgSleep != null ? avgSleep.toFixed(1) : '—', u: 'hrs', sub: 'per night', c: avgSleep != null && avgSleep >= 7 ? JADE : AMBER },
   ]
-  const vg = 9
-  const vW = (CW - vg * 3) / 4
-  const vH = 50
-  vitals.forEach((t, i) => {
-    const col = i % 4, row = Math.floor(i / 4)
-    const x = M + col * (vW + vg), ty = y + row * (vH + vg)
-    doc.setFillColor(...CARD); doc.setDrawColor(...HAIR); doc.setLineWidth(0.7)
-    doc.roundedRect(x, ty, vW, vH, 6, 6, 'FD')
-    doc.setFillColor(...(t.tone || JADE)); doc.roundedRect(x, ty + 8, 3, vH - 16, 1.5, 1.5, 'F')
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.2); doc.setTextColor(...MIST)
-    doc.text(t.l, x + 11, ty + 16)
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(t.small ? 12 : 18); doc.setTextColor(...(t.tone || INK))
-    doc.text(String(t.v), x + 11, ty + (t.small ? 33 : 36))
-    if (t.u) {
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(6.6); doc.setTextColor(...FAINT)
-      doc.text(t.u, x + 11, ty + 44)
-    }
+  const kW = CW / 6
+  doc.setFillColor(...[8, 45, 32])
+  doc.roundedRect(M, y, CW, 52, 6, 6, 'F')
+  kpis.forEach((k, i) => {
+    const kx = M + i * kW + kW / 2
+    if (i > 0) { doc.setDrawColor(255, 255, 255, 0.1); doc.setLineWidth(0.4); doc.line(M + i * kW, y + 10, M + i * kW, y + 42) }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(17); doc.setTextColor(...k.c)
+    doc.text(k.v, kx, y + 26, { align: 'center' })
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(150, 185, 172)
+    doc.text(k.l.toUpperCase(), kx, y + 13, { align: 'center' })
+    if (k.sub) { doc.setFontSize(6.8); doc.setTextColor(120, 160, 148); doc.text(k.sub, kx, y + 37, { align: 'center' }) }
   })
-  y += vH * 2 + vg + 12
+  y += 64
 
-  // ---- clinician one-liner ----
-  const flagged = tol.k >= 3
-  const tldr = []
-  if (dCycle != null) tldr.push(`${dCycle <= 0 ? 'Down' : 'Up'} ${Math.abs(dCycle).toFixed(1)} kg this week`)
-  if (pctVsBase != null) tldr.push(`${pctVsBase >= 0 ? '-' : '+'}${Math.abs(pctVsBase).toFixed(1)}% from baseline`)
-  if (lastDose != null) tldr.push(`${lastDose} mg ${clean(ladder.name)}`)
-  tldr.push(`GI ${tol.label.toLowerCase()}`)
-  if (avgCraving != null) tldr.push(`cravings ${avgCraving.toFixed(1)}/5${cravingTrend != null ? (cravingTrend <= 0 ? ' (easing)' : ' (rising)') : ''}`)
-  const cH = 26
-  doc.setFillColor(...(flagged ? CLAY_WASH : VEIL)); doc.roundedRect(M, y, CW, cH, 5, 5, 'F')
-  doc.setFillColor(...(flagged ? CLAY : JADE)); doc.roundedRect(M, y, 3.5, cH, 1.5, 1.5, 'F')
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...(flagged ? CLAY_DEEP : JADE_DEEP))
-  doc.text('SUMMARY', M + 13, y + 11)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.3); doc.setTextColor(...INK)
-  doc.text(tldr.join('   ·   '), M + 13, y + 20, { maxWidth: CW - 24 })
-  y += cH + 4
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.3); doc.setTextColor(...FAINT)
-  doc.text('*Projection at this week\u2019s rate. Goal is the weight at BMI 25.0; not a clinical target unless set by your clinician.', M, y + 7, { maxWidth: CW })
-
-  // ============================================================
-  //  PAGE 2+  —  CLINICAL DETAIL
-  // ============================================================
-  function heading(text, tone = JADE_DEEP, sub) {
-    if (y > PH - 120) { doc.addPage(); y = 52 }
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...tone)
-    doc.text(text.toUpperCase(), M, y)
-    if (sub) {
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...MIST)
-      doc.text(sub, PW - M, y, { align: 'right' })
+  // ── journey bars ──────────────────────────────────────────────────────────
+  if (journeyPct != null || ladder.steps.length > 0) {
+    const jH = ladder.steps.length > 0 ? 60 : 32
+    doc.setFillColor(...PAPER); doc.setDrawColor(...HAIR); doc.setLineWidth(0.5)
+    doc.roundedRect(M, y, CW, jH, 5, 5, 'FD')
+    let jy = y + 16
+    if (journeyPct != null) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...MIST)
+      doc.text('WEIGHT GOAL', M + 12, jy - 4)
+      bar(M + 90, jy - 8, CW - 140, 7, journeyPct, JADE)
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...JADE_D)
+      doc.text(`${(journeyPct * 100).toFixed(0)}%`, PW - M - 8, jy - 3, { align: 'right' })
     }
-    y += 7
-    doc.setDrawColor(...tone); doc.setLineWidth(1.4); doc.line(M, y, M + 22, y)
-    doc.setDrawColor(...HAIR); doc.setLineWidth(0.5); doc.line(M + 26, y, PW - M, y)
+    if (ladder.steps.length > 0) {
+      jy = y + 42
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...MIST)
+      doc.text('DOSE LADDER', M + 12, jy - 4)
+      const lx = M + 90, lw = CW - 140, lg = lw / (ladder.steps.length - 1 || 1)
+      doc.setDrawColor(...HAIR); doc.setLineWidth(2); doc.line(lx, jy - 3.5, lx + lw, jy - 3.5)
+      if (curRung > 0) { doc.setDrawColor(...JADE); doc.setLineWidth(2.5); doc.line(lx, jy - 3.5, lx + lg * curRung, jy - 3.5) }
+      ladder.steps.forEach((s, i) => {
+        const px = ladder.steps.length === 1 ? lx + lw / 2 : lx + lg * i
+        const done = i <= curRung && curRung >= 0, cur = i === curRung
+        doc.setFillColor(...(cur ? JADE_D : done ? JADE : HAIR)); doc.setDrawColor(...(done || cur ? JADE : HAIR))
+        doc.setLineWidth(1); doc.circle(px, jy - 3.5, cur ? 5 : 3.5, 'FD')
+        if (cur) { doc.setFillColor(...WHITE); doc.circle(px, jy - 3.5, 1.8, 'F') }
+        doc.setFont('helvetica', cur ? 'bold' : 'normal'); doc.setFontSize(cur ? 8 : 7)
+        doc.setTextColor(...(cur ? JADE_D : done ? JADE : MIST))
+        doc.text(`${s}`, px, jy + 8, { align: 'center' })
+      })
+    }
+    y += jH + 10
+  }
+
+  // ── SCORECARD ─────────────────────────────────────────────────────────────
+  const scLabel = (txt) => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...MIST)
+    doc.text(txt, M, y + 5)
+    doc.setDrawColor(...HAIR); doc.setLineWidth(0.4)
+    doc.line(M + doc.getTextWidth(txt) + 4, y + 2, PW - M, y + 2)
     y += 12
   }
-  const base = (tone) => ({
-    startY: y, margin: { left: M, right: M }, theme: 'striped',
-    styles: { font: 'helvetica', fontSize: 8.2, cellPadding: { top: 5.5, right: 7, bottom: 5.5, left: 7 }, textColor: INK, lineWidth: 0, overflow: 'linebreak', valign: 'middle' },
-    headStyles: { fillColor: tone, textColor: 255, fontSize: 7, fontStyle: 'bold', cellPadding: { top: 6, right: 7, bottom: 6, left: 7 } },
-    bodyStyles: { fillColor: WHITE }, alternateRowStyles: { fillColor: VEIL },
-    footStyles: { fillColor: JADE_WASH, textColor: JADE_DEEP, fontStyle: 'bold', fontSize: 7.6 },
-  })
-  function run(opts) { autoTable(doc, opts); y = doc.lastAutoTable.finalY + 18 }
-  const empty = (c) => [[{ content: 'No entries recorded this cycle', colSpan: c, styles: { textColor: MIST, fontStyle: 'italic', halign: 'center' } }]]
-  // severity-pip drawer factory
-  const pipCol = (idx, toneHigh) => ({
-    didParseCell: (h) => { if (h.section === 'body' && h.column.index === idx && h.cell.raw && typeof h.cell.raw === 'object') h.cell.text = [''] },
-    didDrawCell: (h) => {
-      if (h.section === 'body' && h.column.index === idx && h.cell.raw && typeof h.cell.raw === 'object') {
-        const sev = h.cell.raw.sev, r = 2.3, gap = 8
-        const sx = h.cell.x + 7, my = h.cell.y + h.cell.height / 2
-        for (let k = 1; k <= 5; k++) {
-          const filled = k <= sev
-          const tone = toneHigh ? (sev >= 4 ? CLAY : sev >= 3 ? AMBER : JADE) : JADE
-          if (filled) { doc.setFillColor(...tone); doc.setDrawColor(...tone) } else { doc.setFillColor(...WHITE); doc.setDrawColor(...HAIR2) }
-          doc.setLineWidth(0.5); doc.circle(sx + (k - 1) * gap, my, r, filled ? 'F' : 'FD')
-        }
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...MIST); doc.text(`${sev}/5`, sx + 5 * gap + 2, my + 2)
-      }
-    },
-  })
 
-  // --- GI tolerability / side effects (the titration gate) ---
-  doc.addPage(); y = 52
-  heading('Tolerability & side effects', CLAY, 'the gate on dose escalation')
-  run({
-    ...base(CLAY),
-    head: [['When', 'Symptom', 'GI', 'Severity', 'Notes']],
-    body: sideFx.length
-      ? sideFx.slice().sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at))
-          .map((s) => [fmtTime(s.occurred_at), clean(s.type) || '—', isGI(s.type) ? 'GI' : '', { sev: Number(s.severity) || 0 }, clean(s.notes)])
-      : empty(5),
-    columnStyles: { 0: { cellWidth: 94 }, 2: { cellWidth: 26, halign: 'center', textColor: CLAY_DEEP, fontStyle: 'bold' }, 3: { cellWidth: 78 } },
-    ...pipCol(3, true),
-  })
+  const COL = { param: M, bar: M + 158, val: M + 338, grade: M + 418, trend: M + 458 }
+  const ROW_H = 26
 
-  // --- cravings / food noise ---
-  if (cravings.length) {
-    heading('Cravings & food noise', JADE, 'GLP-1 efficacy signal — lower is better')
-    run({
-      ...base(JADE),
-      head: [['When', 'Intensity', 'What / notes']],
-      body: cravings.slice().sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at))
-        .map((c) => [fmtTime(c.occurred_at), { sev: Number(c.severity) || 0 }, clean(c.notes)]),
-      columnStyles: { 0: { cellWidth: 94 }, 1: { cellWidth: 78 } },
-      ...pipCol(1, false),
-    })
+  // column headers
+  doc.setFillColor(...PAPER); doc.rect(M, y, CW, 14, 'F')
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...MIST)
+  ;['Parameter', 'Progress vs target', 'This week', 'Grade', 'Trend / note'].forEach((h, i) => {
+    const xs = [COL.param, COL.bar, COL.val, COL.grade, COL.trend]
+    doc.text(h, xs[i], y + 10)
+  })
+  y += 16
+
+  function scRow(icon, name, sub, barVal, barMax, valStr, valSub, gradeObj, note, rowBg) {
+    if (y > PH - 80) { doc.addPage(); y = 40 }
+    doc.setFillColor(...(rowBg || WHITE)); doc.rect(M, y, CW, ROW_H, 'F')
+    doc.setDrawColor(...HAIR); doc.setLineWidth(0.3); doc.line(M, y + ROW_H, M + CW, y + ROW_H)
+
+    // left accent
+    doc.setFillColor(...(gradeObj.g === 'A' ? JADE : gradeObj.g === 'B' ? AMBER : gradeObj.g === 'C' ? CLAY : HAIR))
+    doc.rect(M, y, 3, ROW_H, 'F')
+
+    // param name
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...INK)
+    doc.text(name, COL.param + 8, y + 11)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...MIST)
+    doc.text(sub, COL.param + 8, y + 21)
+
+    // bar
+    const bw = 170
+    bar(COL.bar, y + 9, bw, 6,
+      barVal != null && barMax ? barVal / barMax : 0,
+      gradeObj.g === 'A' ? JADE : gradeObj.g === 'B' ? AMBER : CLAY)
+    if (barVal != null && barMax) {
+      const pct = Math.min(1, barVal / barMax)
+      doc.setFillColor(...WHITE); doc.setDrawColor(...(gradeObj.g === 'A' ? JADE_D : gradeObj.g === 'B' ? AMBER : CLAY_D))
+      doc.setLineWidth(1); doc.circle(COL.bar + bw * pct, y + 12, 4, 'FD')
+    }
+
+    // value
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
+    doc.setTextColor(...(gradeObj.g === 'A' ? JADE_D : gradeObj.g === 'B' ? [133, 79, 11] : gradeObj.g === 'C' ? CLAY_D : INK))
+    doc.text(valStr, COL.val, y + 13)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...MIST)
+    if (valSub) doc.text(valSub, COL.val, y + 22)
+
+    // grade circle
+    gradeCircle(COL.grade + 10, y + 13, 9, gradeObj.g, gradeObj.g === 'A' ? JADE_D : gradeObj.g === 'B' ? [133, 79, 11] : CLAY_D)
+
+    // note
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GRAPHITE)
+    doc.text(clean(note), COL.trend, y + 14, { maxWidth: PW - M - COL.trend - 4 })
+
+    y += ROW_H
   }
 
-  // --- weight log with rate ---
-  heading('Weight log')
+  // BODY
+  scLabel('BODY')
+  scRow('', 'Weight', `Baseline ${baseW ? baseW.toFixed(1) : '—'} · Goal ${goalW ? goalW.toFixed(1) : '—'} kg`,
+    lostTotal, baseW && goalW ? baseW - goalW : null,
+    lastW ? `${n(lastW, 1)} kg` : '—', deltaW != null ? `${deltaW <= 0 ? '▼' : '▲'} ${Math.abs(deltaW).toFixed(1)} kg` : '',
+    grade(lostTotal, 1, 0), deltaW != null && deltaW <= 0 ? 'On track' : 'Gaining', PAPER)
+  scRow('', 'Rate of loss', 'Target -0.5 to -1.0 kg/week',
+    deltaW != null ? Math.abs(deltaW) : null, 1.0,
+    deltaW != null ? `${Math.abs(deltaW).toFixed(1)} kg/wk` : '—', '',
+    grade(deltaW != null ? Math.abs(deltaW) : null, 0.5, 0.2), 'Target: 0.5–1.0/wk', WHITE)
+
+  // MEDICATION
+  scLabel('MEDICATION')
+  scRow('', 'Weekly injection', `${clean(lastDrug) || 'GLP-1'} · ${curRung >= 0 ? `Step ${curRung + 1}/${ladder.steps.length}` : 'Step unknown'}`,
+    inj.length > 0 ? 1 : 0, 1,
+    lastDose ? `${lastDose} mg` : '—', lastInj ? fmtDate(lastInj.injected_at) : 'Not logged',
+    grade(inj.length, 1, 1), nextDose ? `Next: ${nextDose} mg` : 'At maintenance', PAPER)
+
+  // TOLERABILITY
+  scLabel('TOLERABILITY')
+  scRow('', 'GI side effects', 'Gate for dose escalation',
+    giClear ? 1 : 0, 1,
+    String(sideFx.length), peakSev > 0 ? `Peak ${peakSev}/5` : 'None',
+    grade(giClear ? 1 : 0, 1, 1), giClear ? 'Ready to escalate' : 'Hold dose', PAPER)
+  scRow('', 'Food noise / craving', 'GLP-1 efficacy signal — lower is better',
+    avgCraving != null ? Math.max(0, 5 - avgCraving) : null, 5,
+    avgCraving != null ? `${avgCraving.toFixed(1)}/5` : '—', cravingTrend != null ? (cravingTrend <= 0 ? 'Easing' : 'Rising ▲') : '',
+    gradeRev(avgCraving, 2, 3), avgCraving != null && avgCraving > 3 ? 'Appetite suppression weak' : '', WHITE)
+
+  // NUTRITION
+  scLabel('NUTRITION')
+  scRow('', 'Protein intake', 'Target ≥ 1.2 g/kg/day — lean mass protection',
+    protPerKg, 1.6,
+    protPerKg != null ? `${protPerKg.toFixed(2)} g/kg` : '—', 'per day',
+    grade(protPerKg, 1.2, 0.8), protPerKg != null && protPerKg < 1.2 ? 'Below minimum — muscle risk' : 'Good', PAPER)
+  scRow('', 'Hydration', 'Target ≥ 2.5 L/day',
+    avgWater, 2.5,
+    totalWater > 0 ? `${avgWater.toFixed(1)} L` : '—', 'per day avg',
+    grade(totalWater > 0 ? avgWater : null, 2.5, 1.5), avgWater < 2.5 ? 'Increase intake' : 'On target', WHITE)
+
+  // ACTIVITY
+  scLabel('ACTIVITY')
+  scRow('', 'Cardio', 'Target ≥ 150 min/week',
+    totalMin, 150,
+    `${totalMin} min`, `${acts.length} session${acts.length !== 1 ? 's' : ''}`,
+    grade(totalMin, 150, 60), totalMin < 150 ? `${150 - totalMin} min short` : 'Target met', PAPER)
+  scRow('', 'Resistance training', 'Target ≥ 2 sessions/week — critical on GLP-1',
+    resistMin, 60,
+    resistMin > 0 ? `${resistMin} min` : 'None', resistMin > 0 ? 'Logged' : 'Not logged',
+    grade(resistMin, 60, 20), resistMin === 0 ? 'Muscle loss risk — advise programme' : 'Good', WHITE)
+
+  // WELLBEING
+  scLabel('WELLBEING')
+  scRow('', 'Sleep', 'Target 7–9 hours per night',
+    avgSleep, 9,
+    avgSleep != null ? `${avgSleep.toFixed(1)} hrs` : '—', 'avg per night',
+    grade(avgSleep, 7, 6), avgSleep != null && (avgSleep < 7 || avgSleep > 9) ? 'Outside target range' : 'Good', PAPER)
+  scRow('', 'Energy & mood', 'Daily self-report 1–5',
+    avgMood, 5,
+    avgMood != null ? `${avgMood.toFixed(1)}/5` : '—', avgMood != null ? ['', 'Low', 'Okay', 'Good', 'Great', 'Best'][Math.round(avgMood)] : '',
+    grade(avgMood, 3, 2), avgMood != null && avgMood < 3 ? 'Low mood — discuss' : 'Stable', WHITE)
+
+  y += 10
+
+  // ── day-by-day strip ──────────────────────────────────────────────────────
+  if (y > PH - 120) { doc.addPage(); y = 40 }
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...MIST)
+  doc.text('DAY BY DAY', M, y + 5)
+  doc.setDrawColor(...HAIR); doc.setLineWidth(0.4)
+  doc.line(M + doc.getTextWidth('DAY BY DAY') + 4, y + 2, PW - M, y + 2)
+  y += 12
+
+  const dW = CW / 7
+  ;[0,1,2,3,4,5,6].forEach(i => {
+    const day = new Date(window.start)
+    day.setDate(day.getDate() + i + 1)
+    const dayStr = day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })
+    const apptDay = day.toDateString() === new Date(appointment.appointment_date + 'T12:00:00').toDateString()
+    const dx = M + i * dW
+
+    doc.setFillColor(...(apptDay ? CLAY : PAPER)); doc.setDrawColor(...HAIR); doc.setLineWidth(0.4)
+    doc.roundedRect(dx + 1, y, dW - 2, 18, 3, 3, apptDay ? 'F' : 'FD')
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5)
+    doc.setTextColor(...(apptDay ? WHITE : INK))
+    doc.text(dayStr, dx + dW / 2, y + 12, { align: 'center' })
+  })
+  y += 20
+
+  const DOT_TYPES = [
+    { arr: data.injections, tf: 'injected_at', col: CLAY, label: 'Inj' },
+    { arr: data.weights, tf: 'logged_at', col: JADE, label: 'Wt' },
+    { arr: (data.symptoms||[]).filter(s=>s.type==='craving'), tf: 'occurred_at', col: PURPLE, label: 'Crav' },
+    { arr: (data.symptoms||[]).filter(s=>s.type!=='craving'), tf: 'occurred_at', col: AMBER, label: 'Side' },
+    { arr: data.activities, tf: 'started_at', col: BLUE, label: 'Act' },
+    { arr: data.sleep||[], tf: 'logged_at', col: [83,74,183], label: 'Sleep' },
+  ]
+
+  DOT_TYPES.forEach(dt => {
+    ;[0,1,2,3,4,5,6].forEach(i => {
+      const day = new Date(window.start)
+      day.setDate(day.getDate() + i + 1)
+      const has = (dt.arr || []).some(r => {
+        const d = new Date(r[dt.tf])
+        return d.getDate() === day.getDate() && d.getMonth() === day.getMonth()
+      })
+      if (has) {
+        const dx = M + i * dW + dW / 2
+        doc.setFillColor(...dt.col); doc.circle(dx, y + 4, 3, 'F')
+      }
+    })
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(...MIST)
+    doc.text(dt.label, M - 2, y + 7, { align: 'right' })
+    y += 10
+  })
+  y += 6
+
+  // ── action items + green lights ───────────────────────────────────────────
+  if (y > PH - 140) { doc.addPage(); y = 40 }
+
+  const actions = []
+  if (avgCraving != null && avgCraving > 3) actions.push(`Craving ${avgCraving.toFixed(1)}/5 avg — appetite suppression may be weakening. Review dose adequacy.`)
+  if (cravingTrend != null && cravingTrend > 0.5) actions.push(`Craving rising trend this cycle. Was lower last week — discuss with patient.`)
+  if (protPerKg != null && protPerKg < 1.2) actions.push(`Protein ${protPerKg.toFixed(2)} g/kg/day — below 1.2 minimum. Lean mass loss risk on GLP-1. Set protein targets.`)
+  if (totalWater > 0 && avgWater < 1.5) actions.push(`Hydration critically low at ${avgWater.toFixed(1)} L/day. Advise 2.5+ L minimum.`)
+  if (resistMin === 0) actions.push(`No resistance training logged. Muscle loss accelerates on GLP-1 without it. Recommend supervised programme.`)
+  if (totalMin < 60) actions.push(`Very low activity — only ${totalMin} min logged. Target is 150 min/week.`)
+  if (!giClear) actions.push(`GI events present (peak severity ${peakSev}/5). Hold dose escalation until resolved.`)
+  if (avgMood != null && avgMood < 2.5) actions.push(`Low mood score ${avgMood.toFixed(1)}/5 — discuss wellbeing and GLP-1 effects on energy.`)
+
+  const greens = []
+  if (giClear) greens.push(`GI clear (${sideFx.length} events, peak ${peakSev}/5) — dose escalation approved.${nextDose ? ` Next: ${nextDose} mg.` : ''}`)
+  if (lostTotal != null && lostTotal > 0) greens.push(`Weight down ${lostTotal.toFixed(1)} kg from baseline — ${journeyPct != null ? (journeyPct * 100).toFixed(0) + '% to goal.' : 'progressing.'}`)
+  if (inj.length > 0) greens.push(`Injection taken this cycle — adherence confirmed.`)
+  if (avgSleep != null && avgSleep >= 7 && avgSleep <= 9) greens.push(`Sleep ${avgSleep.toFixed(1)} hrs/night — within healthy 7–9 hr range.`)
+  if (avgMood != null && avgMood >= 3) greens.push(`Mood ${avgMood.toFixed(1)}/5 — stable and positive.`)
+
+  const boxH = Math.max(actions.length, greens.length) * 18 + 28
+  const halfW = (CW - 10) / 2
+
+  // red box
+  doc.setFillColor(...CLAY_W); doc.setDrawColor(...[240, 153, 123]); doc.setLineWidth(0.6)
+  doc.roundedRect(M, y, halfW, boxH, 5, 5, 'FD')
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...CLAY_D)
+  doc.text('ACTION ITEMS FOR THIS VISIT', M + 10, y + 14)
+  actions.forEach((a, i) => {
+    const ty = y + 26 + i * 18
+    doc.setFillColor(...CLAY); doc.circle(M + 14, ty - 2, 5, 'F')
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...WHITE)
+    doc.text(String(i + 1), M + 14, ty + 1.5, { align: 'center' })
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.8); doc.setTextColor(...CLAY_D)
+    doc.text(clean(a), M + 24, ty + 1, { maxWidth: halfW - 28 })
+  })
+  if (actions.length === 0) {
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(...MIST)
+    doc.text('No urgent action items this cycle.', M + 10, y + 32)
+  }
+
+  // green box
+  const gx = M + halfW + 10
+  doc.setFillColor(...JADE_W); doc.setDrawColor(...[159, 225, 203]); doc.setLineWidth(0.6)
+  doc.roundedRect(gx, y, halfW, boxH, 5, 5, 'FD')
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...JADE_D)
+  doc.text('CONFIRMED THIS VISIT', gx + 10, y + 14)
+  greens.forEach((g, i) => {
+    const ty = y + 26 + i * 18
+    doc.setFillColor(...JADE); doc.circle(gx + 14, ty - 2, 5, 'F')
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...WHITE)
+    doc.text('✓', gx + 14, ty + 2, { align: 'center' })
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.8); doc.setTextColor(...JADE_D)
+    doc.text(clean(g), gx + 24, ty + 1, { maxWidth: halfW - 28 })
+  })
+
+  y += boxH + 10
+
+  // ── PAGE 2: detailed tables ───────────────────────────────────────────────
+  doc.addPage(); y = 40
+
+  const tBase = (accentColor) => ({
+    startY: y, margin: { left: M, right: M }, theme: 'striped',
+    styles: { font: 'helvetica', fontSize: 8, cellPadding: { top: 5, right: 7, bottom: 5, left: 7 }, textColor: INK, lineWidth: 0, overflow: 'linebreak', valign: 'middle' },
+    headStyles: { fillColor: accentColor, textColor: WHITE, fontSize: 7.5, fontStyle: 'bold', cellPadding: { top: 6, right: 7, bottom: 6, left: 7 } },
+    bodyStyles: { fillColor: WHITE }, alternateRowStyles: { fillColor: PAPER },
+    footStyles: { fillColor: JADE_W, textColor: JADE_D, fontStyle: 'bold', fontSize: 7.5 },
+  })
+  function tRun(opts) { autoTable(doc, opts); y = doc.lastAutoTable.finalY + 14 }
+  const empty = (c) => [[{ content: 'No entries this cycle', colSpan: c, styles: { textColor: MIST, fontStyle: 'italic', halign: 'center' } }]]
+  const fmtT = (iso) => new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+  function secHead(txt, color = JADE_D) {
+    if (y > PH - 100) { doc.addPage(); y = 40 }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...color)
+    doc.text(txt.toUpperCase(), M, y)
+    y += 5; doc.setDrawColor(...color); doc.setLineWidth(1.5); doc.line(M, y, M + 20, y)
+    doc.setDrawColor(...HAIR); doc.setLineWidth(0.4); doc.line(M + 24, y, PW - M, y)
+    y += 10
+  }
+
+  secHead('Injection history', CLAY_D)
+  tRun({ ...tBase(CLAY), head: [['When', 'Drug', 'Dose (mg)', 'Site', 'Lot', 'Notes']],
+    body: inj.length ? inj.map(i => [fmtT(i.injected_at), clean(i.drug)||'—', n(i.dose_mg,2), clean(i.site)||'—', clean(i.lot)||'—', clean(i.notes)])
+      : empty(6), columnStyles: { 0: { cellWidth: 110 }, 2: { halign: 'right' } } })
+
+  secHead('Tolerability & GI side effects', CLAY_D)
+  tRun({ ...tBase(CLAY), head: [['When', 'Symptom', 'Severity /5', 'Notes']],
+    body: sideFx.length ? sideFx.sort((a,b)=>new Date(a.occurred_at)-new Date(b.occurred_at))
+      .map(s=>[fmtT(s.occurred_at),clean(s.type)||'—',`${s.severity||'—'}/5`,clean(s.notes)])
+      : empty(4), columnStyles: { 0: { cellWidth: 110 } } })
+
+  secHead('Food noise & cravings', [100, 50, 160])
+  tRun({ ...tBase(PURPLE), head: [['When', 'Intensity /5', 'Notes']],
+    body: cravings.length ? cravings.sort((a,b)=>new Date(a.occurred_at)-new Date(b.occurred_at))
+      .map(c=>[fmtT(c.occurred_at),`${c.severity||'—'}/5`,clean(c.notes)])
+      : empty(3), columnStyles: { 0: { cellWidth: 110 } } })
+
+  secHead('Weight log')
   let prevWv = data.prevWeight ?? null
-  run({
-    ...base(INK),
-    head: [['When', 'Weight (kg)', 'Change (kg)', 'Source']],
-    body: weights.length
-      ? weights.map((w) => { const val = Number(w.weight_kg); const d = prevWv != null ? val - prevWv : null; prevWv = val; return [fmtTime(w.logged_at), n(val, 1), { d }, clean(w.source) || 'manual'] })
-      : empty(4),
-    columnStyles: { 0: { cellWidth: 110 }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
-    didParseCell: (h) => {
-      if (h.section === 'body' && h.column.index === 2 && h.cell.raw && typeof h.cell.raw === 'object') {
-        const d = h.cell.raw.d
-        if (d == null) h.cell.text = ['—']
-        else { h.cell.text = [`${d > 0 ? '+' : ''}${d.toFixed(1)}`]; h.cell.styles.textColor = d <= 0 ? JADE : CLAY; h.cell.styles.fontStyle = 'bold' }
-      }
-    },
-  })
+  tRun({ ...tBase(JADE), head: [['When', 'Weight (kg)', 'Change (kg)', 'Source']],
+    body: weights.length ? weights.map(w=>{
+      const val=Number(w.weight_kg), d=prevWv!=null?val-prevWv:null; prevWv=val
+      return [fmtT(w.logged_at), n(val,1), d!=null?`${d>0?'+':''}${d.toFixed(1)}`:'—', clean(w.source)||'manual']
+    }) : empty(4), columnStyles: { 0:{cellWidth:110}, 1:{halign:'right'}, 2:{halign:'right'} } })
 
-  // --- nutrition with protein focus ---
-  heading('Nutrition', JADE, 'protein protects lean mass on GLP-1')
-  run({
-    ...base(JADE),
-    head: [['When', 'Meal', 'Description', 'Calories', 'Protein (g)']],
-    body: meals.length
-      ? meals.slice().sort((a, b) => new Date(a.eaten_at) - new Date(b.eaten_at))
-          .map((m) => [fmtTime(m.eaten_at), clean(m.meal_type) || '—', clean(m.description || m.notes) || '—', n(m.calories), n(m.protein_g)])
+  secHead('Nutrition')
+  tRun({ ...tBase(JADE), head: [['When','Meal','Description','Calories','Protein (g)']],
+    body: meals.length ? meals.sort((a,b)=>new Date(a.eaten_at)-new Date(b.eaten_at))
+      .map(m=>[fmtT(m.eaten_at),clean(m.meal_type)||'—',clean(m.description||m.notes)||'—',n(m.calories,0),n(m.protein_g,0)])
       : empty(5),
-    foot: meals.length ? [['', '', `Cycle total  ·  ${protPerKg != null ? protPerKg.toFixed(2) + ' g/kg/day' : ''}`, int(totalCal), int(totalProt)]] : undefined,
-    columnStyles: { 0: { cellWidth: 94 }, 2: { cellWidth: 150 }, 3: { halign: 'right' }, 4: { halign: 'right' } },
-  })
+    foot: meals.length?[['','',`Cycle total`,totalCal?Math.round(totalCal):'—',totalProt?Math.round(totalProt):'—']]:undefined,
+    columnStyles: {0:{cellWidth:110},2:{cellWidth:140},3:{halign:'right'},4:{halign:'right'}} })
 
-  // --- activity (lean mass: resistance vs cardio) ---
-  heading('Activity & movement', JADE, strengthMin ? `${Math.round(strengthMin)} min resistance training` : undefined)
-  run({
-    ...base(JADE),
-    head: [['When', 'Type', 'Duration (min)', 'Distance (km)', 'Steps', 'Energy (kcal)']],
-    body: acts.length
-      ? acts.slice().sort((a, b) => new Date(a.started_at) - new Date(b.started_at))
-          .map((a) => [fmtTime(a.started_at), clean(a.type) || '—', n(a.duration_min, 0), n(a.distance_km, 2), a.steps != null ? a.steps.toLocaleString() : '—', n(a.energy_kcal, 0)])
+  secHead('Activity & movement', [24, 95, 165])
+  const totalEnergy = acts.reduce((s,a)=>s+(Number(a.energy_kcal)||0),0)
+  tRun({ ...tBase(BLUE), head: [['When','Type','Duration (min)','Distance (km)','Steps','Energy (kcal)']],
+    body: acts.length ? acts.sort((a,b)=>new Date(a.started_at)-new Date(b.started_at))
+      .map(a=>[fmtT(a.started_at),clean(a.type)||'—',n(a.duration_min,0),n(a.distance_km,2),a.steps?a.steps.toLocaleString():'—',n(a.energy_kcal,0)])
       : empty(6),
-    foot: acts.length ? [['', 'Total', int(totalActiveMin), '', int(totalSteps), int(totalEnergy)]] : undefined,
-    columnStyles: { 0: { cellWidth: 94 }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
-  })
+    foot: acts.length?[['','Total',Math.round(totalMin),'','',totalEnergy?Math.round(totalEnergy):'—']]:undefined,
+    columnStyles:{0:{cellWidth:110},2:{halign:'right'},3:{halign:'right'},4:{halign:'right'},5:{halign:'right'}} })
 
-  // --- hydration ---
-  heading('Hydration')
-  const byDay = {}
-  water.forEach((w) => { const d = fmtDate(w.logged_at); byDay[d] = (byDay[d] || 0) + (Number(w.amount_ml) || 0) })
-  const days = Object.entries(byDay)
-  const maxMl = days.reduce((m, [, v]) => Math.max(m, v), 0) || 1
-  run({
-    ...base(JADE),
-    head: [['Day', 'Total (ml)', 'Intake']],
-    body: days.length ? days.map(([d, ml]) => [d, Math.round(ml).toLocaleString(), { ml, max: maxMl }]) : empty(3),
-    columnStyles: { 1: { halign: 'right', cellWidth: 90 }, 2: { cellWidth: 200 } },
-    didParseCell: (h) => { if (h.section === 'body' && h.column.index === 2 && h.cell.raw && typeof h.cell.raw === 'object') h.cell.text = [''] },
-    didDrawCell: (h) => {
-      if (h.section === 'body' && h.column.index === 2 && h.cell.raw && typeof h.cell.raw === 'object') {
-        const { ml, max } = h.cell.raw, bw = (h.cell.width - 14) * Math.max(0.04, ml / max), by = h.cell.y + h.cell.height / 2 - 3
-        doc.setFillColor(...JADE_WASH); doc.roundedRect(h.cell.x + 7, by, h.cell.width - 14, 6, 2, 2, 'F')
-        doc.setFillColor(...JADE); doc.roundedRect(h.cell.x + 7, by, bw, 6, 2, 2, 'F')
-      }
-    },
-  })
+  secHead('Sleep log', [83, 74, 183])
+  tRun({ ...tBase(PURPLE), head: [['When','Hours','Quality /5','Notes']],
+    body: (data.sleep||[]).length ? data.sleep.sort((a,b)=>new Date(a.logged_at)-new Date(b.logged_at))
+      .map(s=>[fmtT(s.logged_at),n(s.hours,1),`${s.quality||'—'}/5`,clean(s.notes)])
+      : empty(4), columnStyles:{0:{cellWidth:110}} })
 
-  // --- injection / titration history ---
-  heading('Injection history', CLAY)
-  run({
-    ...base(CLAY),
-    head: [['When', 'Drug', 'Dose (mg)', 'Site', 'Lot', 'Notes']],
-    body: inj.length
-      ? inj.map((i) => [fmtTime(i.injected_at), clean(i.drug) || '—', n(i.dose_mg, 2), clean(i.site) || '—', clean(i.lot) || '—', clean(i.notes)])
-      : empty(6),
-    columnStyles: { 0: { cellWidth: 94 }, 2: { halign: 'right' } },
-  })
-
-  // --- medication adherence ---
-  heading('Medication adherence')
-  const taken = {}
-  ;(data.medicationLogs || []).forEach((l) => { taken[l.medication_id] = (taken[l.medication_id] || 0) + 1 })
-  const medName = {}
-  ;(data.medications || []).forEach((m) => (medName[m.id] = true))
-  const medRows = (data.medications || []).map((m) => [clean(m.name) || '—', clean(m.dose) || '—', clean(m.schedule) || '—', String(taken[m.id] || 0)])
-  Object.keys(taken).forEach((mid) => { if (!medName[mid]) medRows.push(['(unlisted)', '—', '—', String(taken[mid])]) })
-  run({
-    ...base(INK),
-    head: [['Medication', 'Dose', 'Schedule', 'Times taken']],
-    body: medRows.length ? medRows : empty(4),
-    columnStyles: { 3: { halign: 'right' } },
-  })
-
-  // ============================================================
-  //  HEADER (p>1) + FOOTER
-  // ============================================================
+  // ── header/footer every page ──────────────────────────────────────────────
   const pages = doc.internal.getNumberOfPages()
   const stamp = new Date().toLocaleString()
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p)
     if (p > 1) {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...GRAPHITE)
-      doc.text('GLP-1 Progress Report', M, 30)
-      doc.setFont('helvetica', 'normal'); doc.setTextColor(...MIST)
-      doc.text(`${clean(profile?.full_name) || 'Patient'} · ${fmtDate(window.start)}–${fmtDate(window.end)}`, PW - M, 30, { align: 'right' })
-      doc.setDrawColor(...HAIR); doc.setLineWidth(0.5); doc.line(M, 36, PW - M, 36)
+      doc.setFillColor(...DARK); doc.rect(0, 0, PW, 28, 'F')
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...WHITE)
+      doc.text('GLP-1 Progress Report', M, 18)
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(150, 185, 172)
+      doc.text(`${clean(profile?.full_name)||'Patient'} · ${fmtDate(window.start)}–${fmtDate(window.end)}`, PW-M, 18, { align: 'right' })
     }
-    doc.setDrawColor(...HAIR); doc.setLineWidth(0.5); doc.line(M, PH - 30, PW - M, PH - 30)
+    doc.setDrawColor(...HAIR); doc.setLineWidth(0.4); doc.line(M, PH-28, PW-M, PH-28)
     doc.setFont('helvetica', 'normal'); doc.setFontSize(6.8); doc.setTextColor(...FAINT)
-    doc.text(`Generated ${stamp}  ·  Self-recorded patient data, for clinical review`, M, PH - 18)
-    doc.text(`Page ${p} of ${pages}`, PW - M, PH - 18, { align: 'right' })
+    doc.text(`Generated ${stamp}  ·  Self-recorded patient data, for clinical review`, M, PH-16)
+    doc.text(`Page ${p} of ${pages}`, PW-M, PH-16, { align: 'right' })
   }
   return doc
 }
 
 export function generateWeeklyPDF(args) {
   const doc = buildReportDoc(args)
-  doc.save(`glp1-report-${fmtDate(args.window.end).replace(/[ ,]/g, '-')}.pdf`)
+  doc.save(`glp1-report-${fmtDate(args.window.end).replace(/[ ,]/g,'-')}.pdf`)
 }
