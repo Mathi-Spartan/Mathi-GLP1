@@ -31,18 +31,24 @@ const I = {
   pill:      'M10.5 20.5a5 5 0 0 1-7-7l6-6a5 5 0 0 1 7 7l-6 6ZM8 8l8 8',
   barbell:   'M6 5v14M18 5v14M2 9h4M18 9h4M2 15h4M18 15h4M6 9h12M6 15h12',
   protein:   'M3 2l3 3-3 3M9 2l3 3-3 3M21 12H3M12 21V3',
+  home:      'M3 11l9-8 9 8M5 10v10h14V10',
+  trend:     'M3 17l6-6 4 4 8-8M21 7h-6v6',
+  plus:      'M12 5v14M5 12h14',
+  user:      'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 9a7 7 0 0 1 14 0',
+  bolt:      'M13 2 4 14h6l-1 8 9-12h-6l1-8Z',
+  chevR:     'M9 18l6-6-6-6',
 }
 
 const QUICK = [
-  { type: 'weight',    d: I.weight,    label: 'Weight' },
-  { type: 'injection', d: I.injection, label: 'Injection' },
-  { type: 'meal',      d: I.meal,      label: 'Food' },
-  { type: 'craving',   d: I.craving,   label: 'Craving' },
-  { type: 'water',     d: I.water,     label: 'Water' },
-  { type: 'activity',  d: I.activity,  label: 'Activity' },
-  { type: 'symptom',   d: I.symptom,   label: 'Side effect' },
-  { type: 'sleep',     d: I.sleep,     label: 'Sleep' },
-  { type: 'mood',      d: I.mood,      label: 'Mood' },
+  { type: 'weight',    d: I.weight,    label: 'Weight',     bg: '#e1f5ee', fg: '#0f6e56' },
+  { type: 'injection', d: I.injection, label: 'Dose',        bg: '#e6f1fb', fg: '#185fa5' },
+  { type: 'meal',      d: I.meal,      label: 'Food',        bg: '#faece7', fg: '#993c1d' },
+  { type: 'craving',   d: I.craving,   label: 'Craving',     bg: '#faeeda', fg: '#854f0b' },
+  { type: 'water',     d: I.water,     label: 'Water',       bg: '#e6f1fb', fg: '#0c447c' },
+  { type: 'activity',  d: I.activity,  label: 'Activity',    bg: '#eaf3de', fg: '#3b6d11' },
+  { type: 'symptom',   d: I.symptom,   label: 'Side effect', bg: '#fbeaf0', fg: '#993556' },
+  { type: 'sleep',     d: I.sleep,     label: 'Sleep',        bg: '#eeedfe', fg: '#3c3489', isNew: true },
+  { type: 'mood',      d: I.mood,      label: 'Mood',         bg: '#fbeaf0', fg: '#72243e', isNew: true },
 ]
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -290,6 +296,88 @@ export default function Dashboard({ session }) {
         </div>
       </header>
 
+      <div className="dash-grid">
+        <div className="dash-rail">
+
+          {/* ── hero score card ── */}
+          <div className="hero-card">
+            <div className="hero-top">
+              <div className="hero-score-block">
+                <p className="hero-eyebrow">Weekly score</p>
+                <p className="hero-num">{score}</p>
+                <p className={`hero-status ${score >= 60 ? 'good' : 'warn'}`}>
+                  {score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : 'Needs attention'}
+                </p>
+              </div>
+              <div className="hero-ring">
+                <svg width="62" height="62" viewBox="0 0 62 62">
+                  <circle className="hero-ring-track" cx="31" cy="31" r="26" />
+                  <circle className="hero-ring-fill" cx="31" cy="31" r="26"
+                    strokeDasharray="163.4"
+                    strokeDashoffset={163.4 - (163.4 * Math.min(100, score)) / 100} />
+                </svg>
+              </div>
+            </div>
+            <div className="vitals-scroll">
+              <div className="vital-pill">
+                <Ic d={I.weight} size={15} />
+                <div className="vital-pill-val">{lastW ? n1(lastW) : '—'}<span className="vital-pill-unit">kg</span></div>
+                <div className={`vital-pill-sub ${deltaW != null ? (deltaW <= 0 ? 'ok' : 'warn') : ''}`}>
+                  {deltaW != null ? `${deltaW <= 0 ? '▼' : '▲'} ${Math.abs(deltaW).toFixed(1)} kg` : 'Not logged'}
+                </div>
+              </div>
+              <div className="vital-pill">
+                <Ic d={I.water} size={15} />
+                <div className="vital-pill-val">{totalWater > 0 ? avgWater.toFixed(1) : '—'}<span className="vital-pill-unit">L/day</span></div>
+                <div className={`vital-pill-sub ${totalWater > 0 ? (avgWater >= 2.5 ? 'ok' : 'warn') : ''}`}>
+                  {totalWater > 0 ? (avgWater >= 2.5 ? 'On target' : 'Low') : 'Not logged'}
+                </div>
+              </div>
+              <div className="vital-pill">
+                <Ic d={I.sleep} size={15} />
+                <div className="vital-pill-val">{avgSleep != null ? avgSleep.toFixed(1) : '—'}<span className="vital-pill-unit">hrs</span></div>
+                <div className={`vital-pill-sub ${avgSleep != null ? (avgSleep >= 7 && avgSleep <= 9 ? 'ok' : 'warn') : ''}`}>
+                  {avgSleep != null ? (avgSleep >= 7 && avgSleep <= 9 ? 'Good range' : 'Outside target') : 'Not logged'}
+                </div>
+              </div>
+              <div className="vital-pill">
+                <Ic d={I.mood} size={15} />
+                <div className="vital-pill-val">{avgMood != null ? Math.round(avgMood) : '—'}<span className="vital-pill-unit">/5</span></div>
+                <div className="vital-pill-sub">{avgMood != null ? moodLabel[Math.round(avgMood)] : 'Not logged'}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── week strip ── */}
+          <div className="panel week-panel">
+            <div className="week-label">This week · {fmtDate(win.start)} – {fmtDate(win.end)}</div>
+            <div className="week-strip">
+              {days.map(day => {
+                const isToday = sameDay(day, today)
+                const isAppt = sameDay(day, apptDate)
+                const hits = dayData(day)
+                const hasAny = Object.values(hits).some(Boolean)
+                return (
+                  <div key={day.toISOString()} className={`wday ${isToday ? 'wday-today' : ''} ${isAppt ? 'wday-appt' : ''} ${hasAny && !isToday && !isAppt ? 'wday-has' : ''}`}>
+                    <div className="wday-name">{DAY_NAMES[day.getDay()]}</div>
+                    <div className="wday-circle">{day.getDate()}</div>
+                    <div className="wday-dot-row">
+                      {hits.weight && <div className="wd g" />}
+                      {hits.inj && <div className="wd r" />}
+                      {hits.craving && <div className="wd p" />}
+                      {hits.side && <div className="wd a" />}
+                      {hits.activity && <div className="wd b" />}
+                      {hits.sleep && <div className="wd v" />}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+        </div>
+        <div className="dash-main">
+
       {/* ── journey banner ── */}
       <div className="journey-banner">
         <div className="jb-top-row">
@@ -352,33 +440,6 @@ export default function Dashboard({ session }) {
         )}
       </div>
 
-      {/* ── week strip ── */}
-      <div className="panel week-panel">
-        <div className="week-label">This week · {fmtDate(win.start)} – {fmtDate(win.end)}</div>
-        <div className="week-strip">
-          {days.map(day => {
-            const isToday = sameDay(day, today)
-            const isAppt = sameDay(day, apptDate)
-            const hits = dayData(day)
-            const hasAny = Object.values(hits).some(Boolean)
-            return (
-              <div key={day.toISOString()} className={`wday ${isToday ? 'wday-today' : ''} ${isAppt ? 'wday-appt' : ''} ${hasAny && !isToday && !isAppt ? 'wday-has' : ''}`}>
-                <div className="wday-name">{DAY_NAMES[day.getDay()]}</div>
-                <div className="wday-num">{day.getDate()}</div>
-                <div className="wday-dots">
-                  {hits.weight && <div className="wd g" />}
-                  {hits.inj && <div className="wd r" />}
-                  {hits.craving && <div className="wd p" />}
-                  {hits.side && <div className="wd a" />}
-                  {hits.activity && <div className="wd b" />}
-                  {hits.sleep && <div className="wd v" />}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
       {/* ── alert bar ── */}
       {daysToAppt >= 0 && daysToAppt <= 4 && (
         <div className="alert-bar">
@@ -390,47 +451,18 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      {/* ── health score + key vitals ── */}
-      <div className="panel">
-        <div className="panel-h"><h2>This week's vitals</h2></div>
-        <div className="score-vitals-row">
-          <div className="score-ring">
-            <div className="score-circle">
-              <div className="score-num">{score}</div>
-              <div className="score-label">score</div>
-            </div>
-            <div className="score-sub">Week {weekNum || '—'} · {score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : 'Needs attention'}</div>
-          </div>
-          <div className="vitals-grid">
-            <div className="vital-card">
-              <div className="vc-icon" style={{ background: '#e1f5ee', color: '#0f6e56' }}><Ic d={I.weight} size={14} /></div>
-              <div className="vc-label">Weight</div>
-              <div className="vc-val" style={{ color: '#0f6e56' }}>{lastW ? n1(lastW) : '—'}<span className="vc-unit">kg</span></div>
-              {deltaW != null && <div className={`vc-sub ${deltaW <= 0 ? 'ok' : 'warn'}`}>{deltaW <= 0 ? '▼' : '▲'} {Math.abs(deltaW).toFixed(1)} kg</div>}
-            </div>
-            <div className="vital-card">
-              <div className="vc-icon" style={{ background: '#fae8e3', color: '#712b13' }}><Ic d={I.injection} size={14} /></div>
-              <div className="vc-label">Injection</div>
-              <div className="vc-val">{lastDose ? `${lastDose}mg` : '—'}</div>
-              <div className="vc-sub">{lastInj ? `Step ${curRung + 1}/${ladder.length}` : 'Not logged'}</div>
-            </div>
-            <div className="vital-card">
-              <div className="vc-icon" style={{ background: '#fbeaf0', color: '#72243e' }}><Ic d={I.craving} size={14} /></div>
-              <div className="vc-label">Food noise</div>
-              <div className={`vc-val ${avgCraving != null ? (avgCraving <= 2 ? '' : avgCraving <= 3 ? 'amber' : 'warn') : ''}`}>
-                {avgCraving != null ? avgCraving.toFixed(1) : '—'}<span className="vc-unit">/5</span>
-              </div>
-              {cravingTrend != null && <div className={`vc-sub ${cravingTrend <= 0 ? 'ok' : 'warn'}`}>{cravingTrend <= 0 ? 'Easing' : 'Rising ▲'}</div>}
-            </div>
-            <div className="vital-card">
-              <div className="vc-icon" style={{ background: giClear ? '#e1f5ee' : '#fae8e3', color: giClear ? '#0f6e56' : '#712b13' }}><Ic d={I.symptom} size={14} /></div>
-              <div className="vc-label">GI tolerance</div>
-              <div className={`vc-val ${giClear ? '' : 'warn'}`}>{giClear ? 'Clear' : 'Events'}</div>
-              <div className={`vc-sub ${giClear ? 'ok' : 'warn'}`}>{giClear ? 'Escalation ready' : `${sideFx.length} logged`}</div>
-            </div>
-          </div>
+      {/* ── GI tolerance status banner ── */}
+      <div className="panel report-strip" style={{ cursor: 'pointer' }}>
+        <div className="rs-icon" style={{ background: giClear ? '#eaf3de' : '#fae8e3', color: giClear ? '#27500a' : '#712b13' }}>
+          <Ic d={I.bolt} size={18} />
         </div>
+        <div className="rs-text">
+          <div className="rs-title">GI tolerance: {giClear ? 'clear' : `${sideFx.length} event${sideFx.length === 1 ? '' : 's'}`}</div>
+          <div className="rs-sub">{giClear ? 'Ready to escalate dose' : 'Review before increasing dose'}</div>
+        </div>
+        <Ic d={I.chevR} size={16} />
       </div>
+
 
       {/* ── GLP-1 parameters ── */}
       <div className="panel">
@@ -514,12 +546,14 @@ export default function Dashboard({ session }) {
       {/* ── log buttons ── */}
       <div className="panel">
         <div className="panel-h"><h2>Log something</h2><div className="sub">One tap — adjust time on next screen.</div></div>
-        <div className="actions actions-log">
+        <div className="log-grid">
           {QUICK.map(q => (
-            <button key={q.type} className={`action ${q.type === 'sleep' || q.type === 'mood' ? 'action-new' : ''}`}
+            <button key={q.type} className={`log-tile ${q.isNew ? 'tile-new' : ''}`}
               onClick={() => setOpenLog(q.type)}>
-              <span className="action-ic"><Ic d={q.d} /></span>
-              <span className="action-tx">{q.label}</span>
+              <span className="log-tile-box" style={{ background: q.bg, color: q.fg }}>
+                <Ic d={q.d} size={22} />
+              </span>
+              <span className="log-tile-label">{q.label}</span>
             </button>
           ))}
         </div>
@@ -538,6 +572,22 @@ export default function Dashboard({ session }) {
         </div>
         <button className="btn btn-primary rs-btn" onClick={downloadPDF}>Download PDF</button>
       </div>
+
+        </div>
+      </div>
+
+      {/* ── bottom tab bar (mobile only — hidden ≥760px via CSS) ── */}
+      <nav className="tabbar">
+        <button className="tab-item active"><Ic d={I.home} size={20} /><span>Home</span></button>
+        <button className="tab-item"><Ic d={I.trend} size={20} /><span>Trends</span></button>
+        <div className="tab-fab">
+          <button className="tab-fab-circle" onClick={() => setOpenLog('weight')} aria-label="Log something">
+            <Ic d={I.plus} size={22} />
+          </button>
+        </div>
+        <button className="tab-item" onClick={downloadPDF}><Ic d={I.report} size={20} /><span>Reports</span></button>
+        <button className="tab-item" onClick={() => setShowSettings(true)}><Ic d={I.user} size={20} /><span>Profile</span></button>
+      </nav>
 
       {/* ── toast ── */}
       {toast && <div className={`toast ${toast.type}`}>{toast.text}</div>}
