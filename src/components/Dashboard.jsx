@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import { LogModal } from './LogForms.jsx'
 import { buildReportDoc } from '../lib/pdf.js'
 import { parseAppleHealthExport } from '../lib/appleHealth.js'
-import { nextTuesday, reportWindow, weekDays, sameDay, fmtDate, toISODate } from '../lib/week.js'
+import { nextTuesday, reportWindow, weekDays, weekWindowsBack, sameDay, fmtDate, toISODate } from '../lib/week.js'
 
 // ── icons ────────────────────────────────────────────────────────────────────
 function Ic({ d, size = 22 }) {
@@ -98,103 +98,19 @@ function calcScore(data, profile) {
   return total ? Math.round((score / total) * 100) : 0
 }
 
-// ── main component ────────────────────────────────────────────────────────────
-export default function Dashboard({ session }) {
-  const userId = session.user.id
-  const [profile, setProfile] = useState(null)
-  const [appointment, setAppointment] = useState(null)
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [openLog, setOpenLog] = useState(null)
-  const [showSettings, setShowSettings] = useState(false)
-  const [toast, setToast] = useState(null)
-
-  const win = useMemo(
-    () => appointment ? reportWindow(new Date(appointment.appointment_date + 'T12:00:00')) : null,
-    [appointment]
-  )
-
-  useEffect(() => {
-    let active = true
-    ;(async () => {
-      let { data: p } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle()
-      if (!p) {
-        await supabase.from('profiles').insert({ id: userId, full_name: session.user.email })
-        p = { id: userId, full_name: session.user.email }
-      }
-      const todayISO = toISODate(new Date())
-      let { data: appts } = await supabase.from('appointments').select('*')
-        .gte('appointment_date', todayISO).order('appointment_date', { ascending: true }).limit(1)
-      let appt = appts?.[0]
-      if (!appt) {
-        const { data: created } = await supabase.from('appointments')
-          .insert({ user_id: userId, appointment_date: toISODate(nextTuesday()) }).select().single()
-        appt = created
-      }
-      if (!active) return
-      setProfile(p); setAppointment(appt)
-    })()
-    return () => { active = false }
-  }, [userId, session.user.email])
-
-  const loadData = useCallback(async () => {
-    if (!win) return
-    setLoading(true)
-    const s = win.start.toISOString(), e = win.end.toISOString()
-    const q = (table, tf) => supabase.from(table).select('*').gte(tf, s).lte(tf, e).order(tf, { ascending: true })
-    const [weights, injections, meals, water, activities, medLogs, symptoms, meds, sleep, mood, prev] =
-      await Promise.all([
-        q('weight_logs', 'logged_at'), q('injections', 'injected_at'), q('meals', 'eaten_at'),
-        q('water_logs', 'logged_at'), q('activities', 'started_at'), q('medication_logs', 'taken_at'),
-        q('symptoms', 'occurred_at'), supabase.from('medications').select('*').eq('active', true),
-        q('sleep_logs', 'logged_at'), q('mood_logs', 'logged_at'),
-        supabase.from('weight_logs').select('weight_kg').lt('logged_at', s)
-          .order('logged_at', { ascending: false }).limit(1),
-      ])
-    setData({
-      weights: weights.data || [], injections: injections.data || [], meals: meals.data || [],
-      water: water.data || [], activities: activities.data || [], medicationLogs: medLogs.data || [],
-      symptoms: symptoms.data || [], medications: meds.data || [],
-      sleep: sleep.data || [], mood: mood.data || [],
-      prevWeight: prev.data?.[0]?.weight_kg ?? null,
-    })
-    setLoading(false)
-  }, [win])
-
-  useEffect(() => { loadData() }, [loadData])
-
-  function flash(text, type = 'ok') {
-    setToast({ text, type })
-    setTimeout(() => setToast(null), 3500)
-  }
-
-  function onSaved() { setOpenLog(null); loadData(); flash('Saved.') }
-
-  if (loading || !data || !appointment) {
-    return (
-      <div className="loading">
-        <div className="stack"><div className="spin" /><span>Loading…</span></div>
-      </div>
-    )
-  }
-
-  const score = calcScore(data, profile)
-  const days = weekDays(new Date(appointment.appointment_date + 'T12:00:00'))
+function computeWeekMetrics(weekData, profile) {
   const today = new Date()
-  const apptDate = new Date(appointment.appointment_date + 'T12:00:00')
-  const daysToAppt = Math.ceil((apptDate - today) / (24 * 60 * 60 * 1000))
-
-  const weights = data.weights
+  const weights = weekData.weights
   const lastW = weights.length ? Number(weights[weights.length - 1].weight_kg) : null
   const baseW = profile?.baseline_weight_kg ? Number(profile.baseline_weight_kg) : null
   const goalW = profile?.height_cm ? 24.9 * Math.pow(Number(profile.height_cm) / 100, 2) : null
   const lostTotal = baseW && lastW ? baseW - lastW : null
   const journeyPct = baseW && goalW && lastW ? Math.max(0, Math.min(100, ((baseW - lastW) / (baseW - goalW)) * 100)) : null
-  const cycleStartW = data.prevWeight ?? (weights[0]?.weight_kg ? Number(weights[0].weight_kg) : null)
+  const cycleStartW = weekData.prevWeight ?? (weights[0]?.weight_kg ? Number(weights[0].weight_kg) : null)
   const deltaW = lastW && cycleStartW ? lastW - cycleStartW : null
 
-  const sideFx = (data.symptoms || []).filter(s => s.type?.toLowerCase() !== 'craving')
-  const cravings = (data.symptoms || []).filter(s => s.type?.toLowerCase() === 'craving')
+  const sideFx = (weekData.symptoms || []).filter(s => s.type?.toLowerCase() !== 'craving')
+  const cravings = (weekData.symptoms || []).filter(s => s.type?.toLowerCase() === 'craving')
   const avgCraving = cravings.length ? cravings.reduce((a, c) => a + (Number(c.severity) || 0), 0) / cravings.length : null
   const cravingTrend = (() => {
     if (cravings.length < 2) return null
@@ -206,7 +122,7 @@ export default function Dashboard({ session }) {
   const peakSev = sideFx.reduce((m, s) => Math.max(m, Number(s.severity) || 0), 0)
   const giClear = peakSev <= 2
 
-  const inj = data.injections
+  const inj = weekData.injections
   const lastInj = inj.length ? inj[inj.length - 1] : null
   const lastDose = lastInj?.dose_mg ? Number(lastInj.dose_mg) : null
   const lastDrug = lastInj?.drug || profile?.glp1_drug || ''
@@ -215,90 +131,70 @@ export default function Dashboard({ session }) {
   const nextDose = curRung >= 0 && curRung < ladder.length - 1 ? ladder[curRung + 1] : null
 
   const spanDays = 7
-  const totalProt = data.meals.reduce((s, m) => s + (Number(m.protein_g) || 0), 0)
+  const totalProt = weekData.meals.reduce((s, m) => s + (Number(m.protein_g) || 0), 0)
   const protPerKg = lastW && totalProt ? (totalProt / spanDays / lastW) : null
-  const totalWater = data.water.reduce((s, w) => s + (Number(w.amount_ml) || 0), 0)
+  const totalWater = weekData.water.reduce((s, w) => s + (Number(w.amount_ml) || 0), 0)
   const avgWater = totalWater / spanDays / 1000
-  const totalActiveMin = data.activities.reduce((s, a) => s + (Number(a.duration_min) || 0), 0)
-  const resistanceMin = data.activities.filter(a => /strength|weight|resist|barbell/i.test(a.type || '')).reduce((s, a) => s + (Number(a.duration_min) || 0), 0)
-  const avgSleep = data.sleep.length ? data.sleep.reduce((s, sl) => s + (Number(sl.hours) || 0), 0) / data.sleep.length : null
-  const avgMood = data.mood.length ? data.mood.reduce((s, m) => s + (Number(m.score) || 0), 0) / data.mood.length : null
+  const totalActiveMin = weekData.activities.reduce((s, a) => s + (Number(a.duration_min) || 0), 0)
+  const resistanceMin = weekData.activities.filter(a => /strength|weight|resist|barbell/i.test(a.type || '')).reduce((s, a) => s + (Number(a.duration_min) || 0), 0)
+  const avgSleep = weekData.sleep.length ? weekData.sleep.reduce((s, sl) => s + (Number(sl.hours) || 0), 0) / weekData.sleep.length : null
+  const avgMood = weekData.mood.length ? weekData.mood.reduce((s, m) => s + (Number(m.score) || 0), 0) / weekData.mood.length : null
   const moodLabel = ['', 'Low', 'Okay', 'Good', 'Great', 'Best']
 
   const treatStart = profile?.treatment_start_date ? new Date(profile.treatment_start_date) : null
-  const weekNum = treatStart ? Math.ceil((today - treatStart) / (7 * 24 * 60 * 60 * 1000)) : null
-  const monthNum = treatStart ? Math.ceil((today - treatStart) / (30.5 * 24 * 60 * 60 * 1000)) : null
+  const weekNum = treatStart ? Math.ceil((weekData.window.end - treatStart) / (7 * 24 * 60 * 60 * 1000)) : null
+  const monthNum = treatStart ? Math.ceil((weekData.window.end - treatStart) / (30.5 * 24 * 60 * 60 * 1000)) : null
 
-  // day-level data for week strip
   function dayData(day) {
     const hits = { inj: false, weight: false, craving: false, side: false, activity: false, sleep: false, meal: false }
-    data.injections.forEach(r => { if (sameDay(new Date(r.injected_at), day)) hits.inj = true })
-    data.weights.forEach(r => { if (sameDay(new Date(r.logged_at), day)) hits.weight = true })
-    data.symptoms.forEach(r => {
+    weekData.injections.forEach(r => { if (sameDay(new Date(r.injected_at), day)) hits.inj = true })
+    weekData.weights.forEach(r => { if (sameDay(new Date(r.logged_at), day)) hits.weight = true })
+    weekData.symptoms.forEach(r => {
       if (sameDay(new Date(r.occurred_at), day)) {
         if (r.type === 'craving') hits.craving = true; else hits.side = true
       }
     })
-    data.activities.forEach(r => { if (sameDay(new Date(r.started_at), day)) hits.activity = true })
-    data.sleep.forEach(r => { if (sameDay(new Date(r.logged_at), day)) hits.sleep = true })
-    data.meals.forEach(r => { if (sameDay(new Date(r.eaten_at), day)) hits.meal = true })
+    weekData.activities.forEach(r => { if (sameDay(new Date(r.started_at), day)) hits.activity = true })
+    weekData.sleep.forEach(r => { if (sameDay(new Date(r.logged_at), day)) hits.sleep = true })
+    weekData.meals.forEach(r => { if (sameDay(new Date(r.eaten_at), day)) hits.meal = true })
     return hits
   }
 
-  const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-  const MON_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const score = calcScore(weekData, profile)
 
-  function StatBar({ value, max, color = '#1d9e75' }) {
-    const w = Math.min(100, Math.max(0, (value / max) * 100))
-    return (
-      <div className="stat-bar">
-        <div className="stat-bar-fill" style={{ width: `${w}%`, background: color }} />
-      </div>
-    )
+  return {
+    today, lastW, baseW, goalW, lostTotal, journeyPct, deltaW, sideFx, cravings, avgCraving, cravingTrend,
+    giClear, lastInj, lastDose, lastDrug, ladder, curRung, nextDose, totalProt, protPerKg, totalWater, avgWater,
+    totalActiveMin, resistanceMin, avgSleep, avgMood, moodLabel, weekNum, monthNum, dayData, score,
   }
+}
 
-  function GradeTag({ grade }) {
-    const cls = grade === 'A' ? 'grade-a' : grade === 'B' ? 'grade-b' : 'grade-c'
-    return <span className={`grade-tag ${cls}`}>{grade}</span>
-  }
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-  function downloadPDF() {
-    try {
-      const doc = buildReportDoc({ profile, appointment, window: win, data })
-      doc.save(`glp1-report-week${weekNum || ''}.pdf`)
-      flash('Report downloaded.')
-    } catch (err) {
-      flash('Could not build report: ' + err.message, 'err')
-    }
-  }
+function StatBar({ value, max, color = '#1d9e75' }) {
+  const w = Math.min(100, Math.max(0, (value / max) * 100))
+  return (
+    <div className="stat-bar">
+      <div className="stat-bar-fill" style={{ width: `${w}%`, background: color }} />
+    </div>
+  )
+}
+
+function WeekSection({ weekData, profile, appointment, isLatest, setOpenLog }) {
+  const m = computeWeekMetrics(weekData, profile)
+  const {
+    today, lastW, lostTotal, journeyPct, deltaW, sideFx, avgCraving, giClear,
+    lastDose, ladder, curRung, totalProt, protPerKg, totalWater, avgWater,
+    totalActiveMin, resistanceMin, avgSleep, avgMood, moodLabel, weekNum, monthNum, dayData, score,
+  } = m
+  const apptDate = new Date(appointment.appointment_date + 'T12:00:00')
+  const daysToAppt = Math.ceil((apptDate - today) / (24 * 60 * 60 * 1000))
+  const days = weekDays(weekData.window.end)
 
   return (
-    <div className="app">
-      {/* ── topbar ── */}
-      <header className="appbar">
-        <div className="brand">
-          <div className="brand-mark">✚</div>
-          <div>
-            <h1>GLP-1 Tracker</h1>
-            <small>{profile?.full_name || session.user.email}</small>
-          </div>
-        </div>
-        <div className="appbar-actions">
-          <button className="icon-btn" onClick={downloadPDF} aria-label="Download report">
-            <Ic d={I.report} size={20} />
-          </button>
-          <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Settings">
-            <Ic d={I.gear} size={20} />
-          </button>
-          <button className="icon-btn" onClick={() => supabase.auth.signOut()} aria-label="Sign out">
-            <Ic d={I.out} size={20} />
-          </button>
-        </div>
-      </header>
-
-      <div className="dash-grid">
-        <div className="dash-rail">
-
+    <div className="week-section">
+      {isLatest && (
+        <>
           {/* ── hero score card ── */}
           <div className="hero-card">
             <div className="hero-top">
@@ -347,122 +243,130 @@ export default function Dashboard({ session }) {
               </div>
             </div>
           </div>
+        </>
+      )}
 
-          {/* ── week strip ── */}
-          <div className="panel week-panel">
-            <div className="week-label">This week · {fmtDate(win.start)} – {fmtDate(win.end)}</div>
-            <div className="week-strip">
-              {days.map(day => {
-                const isToday = sameDay(day, today)
-                const isAppt = sameDay(day, apptDate)
-                const hits = dayData(day)
-                const hasAny = Object.values(hits).some(Boolean)
-                return (
-                  <div key={day.toISOString()} className={`wday ${isToday ? 'wday-today' : ''} ${isAppt ? 'wday-appt' : ''} ${hasAny && !isToday && !isAppt ? 'wday-has' : ''}`}>
-                    <div className="wday-name">{DAY_NAMES[day.getDay()]}</div>
-                    <div className="wday-circle">{day.getDate()}</div>
-                    <div className="wday-dot-row">
-                      {hits.weight && <div className="wd g" />}
-                      {hits.inj && <div className="wd r" />}
-                      {hits.craving && <div className="wd p" />}
-                      {hits.side && <div className="wd a" />}
-                      {hits.activity && <div className="wd b" />}
-                      {hits.sleep && <div className="wd v" />}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-        </div>
-        <div className="dash-main">
-
-      {/* ── journey banner ── */}
-      <div className="journey-banner">
-        <div className="jb-top-row">
-          <span className="jb-eyebrow">
-            Treatment journey{weekNum ? ` · Week ${weekNum}` : ''}{monthNum ? ` · Month ${monthNum}` : ''}
-          </span>
-          <div className="jb-badges">
-            {weekNum && <span className="jb-badge">Week {weekNum}</span>}
-            {daysToAppt >= 0 && (
-              <span className={`jb-badge ${daysToAppt <= 2 ? 'jb-badge-appt' : ''}`}>
-                {daysToAppt === 0 ? 'Doctor today' : daysToAppt === 1 ? 'Doctor tomorrow' : `Doctor in ${daysToAppt} days`}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="jb-stats">
-          <div className="jbs">
-            <div className={`jbs-v ${lostTotal != null && lostTotal > 0 ? 'green' : ''}`}>
-              {lostTotal != null ? `-${lostTotal.toFixed(1)}` : '—'}
-            </div>
-            <div className="jbs-l">kg lost total</div>
-          </div>
-          <div className="jbs">
-            <div className="jbs-v">{lastW ? n1(lastW) : '—'}</div>
-            <div className="jbs-l">current kg</div>
-          </div>
-          <div className="jbs">
-            <div className={`jbs-v ${avgCraving != null ? (avgCraving <= 2 ? 'green' : 'amber') : ''}`}>
-              {avgCraving != null ? avgCraving.toFixed(1) : '—'}
-            </div>
-            <div className="jbs-l">craving avg</div>
-          </div>
-          <div className="jbs">
-            <div className={`jbs-v ${giClear ? 'green' : 'red'}`}>{sideFx.length}</div>
-            <div className="jbs-l">GI events</div>
-          </div>
-        </div>
-        {journeyPct != null && (
-          <div className="jb-progress-row">
-            <span className="jb-prog-label">Weight goal</span>
-            <div className="jb-prog-track">
-              <div className="jb-prog-fill" style={{ width: `${journeyPct}%` }} />
-            </div>
-            <span className="jb-prog-val">{journeyPct.toFixed(0)}%</span>
-          </div>
-        )}
-        {ladder.length > 0 && (
-          <div className="jb-ladder-row">
-            <span className="jb-prog-label">Dose ladder</span>
-            <div className="jb-ladder">
-              {ladder.map((s, i) => (
-                <div key={s} className="jb-ladder-step">
-                  {i > 0 && <div className={`jb-rung ${i <= curRung ? 'done' : ''}`} />}
-                  <div className={`jb-dot ${i < curRung ? 'done' : i === curRung ? 'cur' : ''}`} />
-                </div>
-              ))}
-            </div>
-            <span className="jb-prog-val">{lastDose ? `${lastDose}mg` : '—'}</span>
-          </div>
-        )}
-      </div>
-
-      {/* ── alert bar ── */}
-      {daysToAppt >= 0 && daysToAppt <= 4 && (
-        <div className="alert-bar">
-          <Ic d={I.report} size={15} />
-          <span>
-            {daysToAppt <= 1 ? 'Doctor visit very soon — ' : `${daysToAppt} days until your appointment — `}
-            log weight, craving and any side effects for your report.
-          </span>
+      {!isLatest && (
+        <div className="wk-divider">
+          <span className="wk-divider-label">Week {weekNum || '—'} score: {score}</span>
         </div>
       )}
 
-      {/* ── GI tolerance status banner ── */}
-      <div className="panel report-strip" style={{ cursor: 'pointer' }}>
-        <div className="rs-icon" style={{ background: giClear ? '#eaf3de' : '#fae8e3', color: giClear ? '#27500a' : '#712b13' }}>
-          <Ic d={I.bolt} size={18} />
+      {/* ── week strip ── */}
+      <div className="panel week-panel">
+        <div className="week-label">{isLatest ? 'This week' : 'Week'} · {fmtDate(weekData.window.start)} – {fmtDate(weekData.window.end)}</div>
+        <div className="week-strip">
+          {days.map(day => {
+            const isToday = sameDay(day, today)
+            const isAppt = sameDay(day, apptDate)
+            const hits = dayData(day)
+            const hasAny = Object.values(hits).some(Boolean)
+            return (
+              <div key={day.toISOString()} className={`wday ${isToday ? 'wday-today' : ''} ${isAppt ? 'wday-appt' : ''} ${hasAny && !isToday && !isAppt ? 'wday-has' : ''}`}>
+                <div className="wday-name">{DAY_NAMES[day.getDay()]}</div>
+                <div className="wday-circle">{day.getDate()}</div>
+                <div className="wday-dot-row">
+                  {hits.weight && <div className="wd g" />}
+                  {hits.inj && <div className="wd r" />}
+                  {hits.craving && <div className="wd p" />}
+                  {hits.side && <div className="wd a" />}
+                  {hits.activity && <div className="wd b" />}
+                  {hits.sleep && <div className="wd v" />}
+                </div>
+              </div>
+            )
+          })}
         </div>
-        <div className="rs-text">
-          <div className="rs-title">GI tolerance: {giClear ? 'clear' : `${sideFx.length} event${sideFx.length === 1 ? '' : 's'}`}</div>
-          <div className="rs-sub">{giClear ? 'Ready to escalate dose' : 'Review before increasing dose'}</div>
-        </div>
-        <Ic d={I.chevR} size={16} />
       </div>
 
+      {isLatest && (
+        <>
+          {/* ── journey banner ── */}
+          <div className="journey-banner">
+            <div className="jb-top-row">
+              <span className="jb-eyebrow">
+                Treatment journey{weekNum ? ` · Week ${weekNum}` : ''}{monthNum ? ` · Month ${monthNum}` : ''}
+              </span>
+              <div className="jb-badges">
+                {weekNum && <span className="jb-badge">Week {weekNum}</span>}
+                {daysToAppt >= 0 && (
+                  <span className={`jb-badge ${daysToAppt <= 2 ? 'jb-badge-appt' : ''}`}>
+                    {daysToAppt === 0 ? 'Doctor today' : daysToAppt === 1 ? 'Doctor tomorrow' : `Doctor in ${daysToAppt} days`}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="jb-stats">
+              <div className="jbs">
+                <div className={`jbs-v ${lostTotal != null && lostTotal > 0 ? 'green' : ''}`}>
+                  {lostTotal != null ? `-${lostTotal.toFixed(1)}` : '—'}
+                </div>
+                <div className="jbs-l">kg lost total</div>
+              </div>
+              <div className="jbs">
+                <div className="jbs-v">{lastW ? n1(lastW) : '—'}</div>
+                <div className="jbs-l">current kg</div>
+              </div>
+              <div className="jbs">
+                <div className={`jbs-v ${avgCraving != null ? (avgCraving <= 2 ? 'green' : 'amber') : ''}`}>
+                  {avgCraving != null ? avgCraving.toFixed(1) : '—'}
+                </div>
+                <div className="jbs-l">craving avg</div>
+              </div>
+              <div className="jbs">
+                <div className={`jbs-v ${giClear ? 'green' : 'red'}`}>{sideFx.length}</div>
+                <div className="jbs-l">GI events</div>
+              </div>
+            </div>
+            {journeyPct != null && (
+              <div className="jb-progress-row">
+                <span className="jb-prog-label">Weight goal</span>
+                <div className="jb-prog-track">
+                  <div className="jb-prog-fill" style={{ width: `${journeyPct}%` }} />
+                </div>
+                <span className="jb-prog-val">{journeyPct.toFixed(0)}%</span>
+              </div>
+            )}
+            {ladder.length > 0 && (
+              <div className="jb-ladder-row">
+                <span className="jb-prog-label">Dose ladder</span>
+                <div className="jb-ladder">
+                  {ladder.map((s, i) => (
+                    <div key={s} className="jb-ladder-step">
+                      {i > 0 && <div className={`jb-rung ${i <= curRung ? 'done' : ''}`} />}
+                      <div className={`jb-dot ${i < curRung ? 'done' : i === curRung ? 'cur' : ''}`} />
+                    </div>
+                  ))}
+                </div>
+                <span className="jb-prog-val">{lastDose ? `${lastDose}mg` : '—'}</span>
+              </div>
+            )}
+          </div>
+
+          {/* ── alert bar ── */}
+          {daysToAppt >= 0 && daysToAppt <= 4 && (
+            <div className="alert-bar">
+              <Ic d={I.report} size={15} />
+              <span>
+                {daysToAppt <= 1 ? 'Doctor visit very soon — ' : `${daysToAppt} days until your appointment — `}
+                log weight, craving and any side effects for your report.
+              </span>
+            </div>
+          )}
+
+          {/* ── GI tolerance status banner ── */}
+          <div className="panel report-strip" style={{ cursor: 'pointer' }}>
+            <div className="rs-icon" style={{ background: giClear ? '#eaf3de' : '#fae8e3', color: giClear ? '#27500a' : '#712b13' }}>
+              <Ic d={I.bolt} size={18} />
+            </div>
+            <div className="rs-text">
+              <div className="rs-title">GI tolerance: {giClear ? 'clear' : `${sideFx.length} event${sideFx.length === 1 ? '' : 's'}`}</div>
+              <div className="rs-sub">{giClear ? 'Ready to escalate dose' : 'Review before increasing dose'}</div>
+            </div>
+            <Ic d={I.chevR} size={16} />
+          </div>
+        </>
+      )}
 
       {/* ── GLP-1 parameters ── */}
       <div className="panel">
@@ -528,7 +432,7 @@ export default function Dashboard({ session }) {
                 const active = rounded === s
                 return (
                   <div key={s} className={`mood-btn ${active ? 'mood-active' : ''}`}
-                    onClick={() => setOpenLog('mood')}>
+                    onClick={() => isLatest && setOpenLog('mood')}>
                     <div className="mood-num">{s}</div>
                     <div className="mood-label">{['Low','Okay','Good','Great','Best'][s-1]}</div>
                   </div>
@@ -536,12 +440,261 @@ export default function Dashboard({ session }) {
               })}
             </div>
             <div className="pc-note" style={{ marginTop: 6 }}>
-              {avgMood != null ? `Average ${avgMood.toFixed(1)}/5 — ${moodLabel[Math.round(avgMood)]}` : 'Tap a button above to log mood'}
+              {avgMood != null ? `Average ${avgMood.toFixed(1)}/5 — ${moodLabel[Math.round(avgMood)]}` : 'No mood logged this week'}
             </div>
           </div>
 
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── OverallCard ───────────────────────────────────────────────────────────────
+function OverallCard({ overall }) {
+  if (!overall) return null
+  const { totalLost, lastLoggedW, totalInjections, totalSideEffects, trackingSince } = overall
+  return (
+    <div className="panel overall-card">
+      <div className="panel-h"><h2>Overall progress</h2>
+        {trackingSince && <div className="sub">Tracking since {fmtDate(trackingSince)}</div>}
+      </div>
+      <div className="overall-grid">
+        <div className="overall-stat">
+          <div className={`overall-v ${totalLost != null && totalLost > 0 ? 'green' : ''}`}>
+            {totalLost != null ? `-${totalLost.toFixed(1)}` : '—'}
+          </div>
+          <div className="overall-l">kg lost all-time</div>
+        </div>
+        <div className="overall-stat">
+          <div className="overall-v">{lastLoggedW != null ? n1(lastLoggedW) : '—'}</div>
+          <div className="overall-l">current kg</div>
+        </div>
+        <div className="overall-stat">
+          <div className="overall-v">{totalInjections}</div>
+          <div className="overall-l">total doses</div>
+        </div>
+        <div className="overall-stat">
+          <div className={`overall-v ${totalSideEffects === 0 ? 'green' : ''}`}>{totalSideEffects}</div>
+          <div className="overall-l">side effects logged</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── main component ────────────────────────────────────────────────────────────
+const WEEKS_PAGE = 8
+
+export default function Dashboard({ session }) {
+  const userId = session.user.id
+  const [profile, setProfile] = useState(null)
+  const [appointment, setAppointment] = useState(null)
+  const [data, setData] = useState(null)
+  const [weeksToShow, setWeeksToShow] = useState(WEEKS_PAGE)
+  const [overall, setOverall] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [openLog, setOpenLog] = useState(null)
+  const [showSettings, setShowSettings] = useState(false)
+  const [toast, setToast] = useState(null)
+
+  const win = useMemo(
+    () => appointment ? reportWindow(new Date(appointment.appointment_date + 'T12:00:00')) : null,
+    [appointment]
+  )
+
+  // Anchor the appointment date to exactly 7 days after the very first
+  // injection ever logged. Re-runs (cheaply) after every save; only writes
+  // when the computed date actually differs from what's stored.
+  const syncAppointmentToFirstInjection = useCallback(async (currentAppt) => {
+    const { data: firstInj } = await supabase.from('injections').select('injected_at')
+      .order('injected_at', { ascending: true }).limit(1).maybeSingle()
+    if (!firstInj) return currentAppt
+    const anchored = new Date(firstInj.injected_at)
+    anchored.setDate(anchored.getDate() + 7)
+    const anchoredISO = toISODate(anchored)
+    if (currentAppt && currentAppt.appointment_date === anchoredISO) return currentAppt
+    if (currentAppt) {
+      const { data: updated } = await supabase.from('appointments')
+        .update({ appointment_date: anchoredISO })
+        .eq('id', currentAppt.id).select().single()
+      return updated || currentAppt
+    }
+    const { data: created } = await supabase.from('appointments')
+      .insert({ user_id: userId, appointment_date: anchoredISO }).select().single()
+    return created || currentAppt
+  }, [userId])
+
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      let { data: p } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle()
+      if (!p) {
+        await supabase.from('profiles').insert({ id: userId, full_name: session.user.email })
+        p = { id: userId, full_name: session.user.email }
+      }
+      let { data: appts } = await supabase.from('appointments').select('*')
+        .order('appointment_date', { ascending: false }).limit(1)
+      let appt = appts?.[0] || null
+      if (!appt) {
+        const { data: created } = await supabase.from('appointments')
+          .insert({ user_id: userId, appointment_date: toISODate(nextTuesday()) }).select().single()
+        appt = created
+      }
+      appt = await syncAppointmentToFirstInjection(appt)
+      if (!active) return
+      setProfile(p); setAppointment(appt)
+    })()
+    return () => { active = false }
+  }, [userId, session.user.email, syncAppointmentToFirstInjection])
+
+  const loadOverall = useCallback(async () => {
+    const q = (table, tf, cols = '*') => supabase.from(table).select(cols).order(tf, { ascending: true })
+    const [weights, injections, symptoms, firstW] = await Promise.all([
+      q('weight_logs', 'logged_at', 'weight_kg,logged_at'),
+      q('injections', 'injected_at', 'injected_at,dose_mg,drug'),
+      q('symptoms', 'occurred_at', 'type,severity,occurred_at'),
+      supabase.from('weight_logs').select('weight_kg,logged_at').order('logged_at', { ascending: true }).limit(1),
+    ])
+    const ws = weights.data || []
+    const firstLoggedW = firstW.data?.[0]?.weight_kg ? Number(firstW.data[0].weight_kg) : null
+    const lastLoggedW = ws.length ? Number(ws[ws.length - 1].weight_kg) : null
+    const totalLost = firstLoggedW != null && lastLoggedW != null ? firstLoggedW - lastLoggedW : null
+    const inj = injections.data || []
+    const sideFx = (symptoms.data || []).filter(s => s.type?.toLowerCase() !== 'craving')
+    const firstDate = ws[0]?.logged_at || inj[0]?.injected_at || null
+    setOverall({
+      totalLost, firstLoggedW, lastLoggedW,
+      totalInjections: inj.length,
+      totalSideEffects: sideFx.length,
+      trackingSince: firstDate,
+    })
+  }, [])
+
+  useEffect(() => { loadOverall() }, [loadOverall])
+
+  const weekWindows = useMemo(
+    () => win ? weekWindowsBack(win.end, weeksToShow) : [],
+    [win, weeksToShow]
+  )
+
+  const loadData = useCallback(async () => {
+    if (!weekWindows.length) return
+    setLoading(true)
+    const fetchWindow = async (w) => {
+      const s = w.start.toISOString(), e = w.end.toISOString()
+      const q = (table, tf) => supabase.from(table).select('*').gte(tf, s).lte(tf, e).order(tf, { ascending: true })
+      const [weights, injections, meals, water, activities, medLogs, symptoms, sleep, mood, prev] =
+        await Promise.all([
+          q('weight_logs', 'logged_at'), q('injections', 'injected_at'), q('meals', 'eaten_at'),
+          q('water_logs', 'logged_at'), q('activities', 'started_at'), q('medication_logs', 'taken_at'),
+          q('symptoms', 'occurred_at'),
+          q('sleep_logs', 'logged_at'), q('mood_logs', 'logged_at'),
+          supabase.from('weight_logs').select('weight_kg').lt('logged_at', s)
+            .order('logged_at', { ascending: false }).limit(1),
+        ])
+      return {
+        window: w,
+        weights: weights.data || [], injections: injections.data || [], meals: meals.data || [],
+        water: water.data || [], activities: activities.data || [], medicationLogs: medLogs.data || [],
+        symptoms: symptoms.data || [],
+        sleep: sleep.data || [], mood: mood.data || [],
+        prevWeight: prev.data?.[0]?.weight_kg ?? null,
+      }
+    }
+    const [meds, ...weeks] = await Promise.all([
+      supabase.from('medications').select('*').eq('active', true),
+      ...weekWindows.map(fetchWindow),
+    ])
+    setData({ medications: meds.data || [], weeks })
+    setLoading(false)
+  }, [weekWindows])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  function flash(text, type = 'ok') {
+    setToast({ text, type })
+    setTimeout(() => setToast(null), 3500)
+  }
+
+  async function onSaved(savedType) {
+    setOpenLog(null)
+    if (savedType === 'injection') {
+      const updated = await syncAppointmentToFirstInjection(appointment)
+      setAppointment(updated)
+    }
+    loadData(); loadOverall(); flash('Saved.')
+  }
+
+  if (loading || !data || !appointment) {
+    return (
+      <div className="loading">
+        <div className="stack"><div className="spin" /><span>Loading…</span></div>
+      </div>
+    )
+  }
+
+  const today = new Date()
+  const apptDate = new Date(appointment.appointment_date + 'T12:00:00')
+  const daysToAppt = Math.ceil((apptDate - today) / (24 * 60 * 60 * 1000))
+  const latestWeek = data.weeks[0]
+  const latestMetrics = computeWeekMetrics(latestWeek, profile)
+  const { weekNum, monthNum } = latestMetrics
+
+  function downloadPDF() {
+    try {
+      const doc = buildReportDoc({ profile, appointment, window: latestWeek.window, data: latestWeek })
+      doc.save(`glp1-report-week${weekNum || ''}.pdf`)
+      flash('Report downloaded.')
+    } catch (err) {
+      flash('Could not build report: ' + err.message, 'err')
+    }
+  }
+
+  return (
+    <div className="app">
+      {/* ── topbar ── */}
+      <header className="appbar">
+        <div className="brand">
+          <div className="brand-mark">✚</div>
+          <div>
+            <h1>GLP-1 Tracker</h1>
+            <small>{profile?.full_name || session.user.email}</small>
+          </div>
+        </div>
+        <div className="appbar-actions">
+          <button className="icon-btn" onClick={downloadPDF} aria-label="Download report">
+            <Ic d={I.report} size={20} />
+          </button>
+          <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Settings">
+            <Ic d={I.gear} size={20} />
+          </button>
+          <button className="icon-btn" onClick={() => supabase.auth.signOut()} aria-label="Sign out">
+            <Ic d={I.out} size={20} />
+          </button>
+        </div>
+      </header>
+
+      <div className="week-feed">
+        <OverallCard overall={overall} />
+
+        {data.weeks.map((wk, idx) => (
+          <WeekSection
+            key={wk.window.start.toISOString()}
+            weekData={wk}
+            profile={profile}
+            appointment={appointment}
+            isLatest={idx === 0}
+            setOpenLog={setOpenLog}
+          />
+        ))}
+
+        <div className="load-more-row">
+          <button className="btn" onClick={() => setWeeksToShow(n => n + WEEKS_PAGE)}>
+            Load earlier weeks
+          </button>
+        </div>
+
 
       {/* ── log buttons ── */}
       <div className="panel">
@@ -561,7 +714,7 @@ export default function Dashboard({ session }) {
 
       <MedsCard userId={userId} meds={data.medications} onLogged={loadData} flash={flash} />
 
-      <AppleHealthCard userId={userId} window={win} onImported={loadData} flash={flash} />
+      <AppleHealthCard userId={userId} window={latestWeek.window} onImported={loadData} flash={flash} />
 
       {/* ── report strip ── */}
       <div className="panel report-strip">
@@ -573,7 +726,6 @@ export default function Dashboard({ session }) {
         <button className="btn btn-primary rs-btn" onClick={downloadPDF}>Download PDF</button>
       </div>
 
-        </div>
       </div>
 
       {/* ── bottom tab bar (mobile only — hidden ≥760px via CSS) ── */}

@@ -539,17 +539,23 @@ label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); 
 @media (min-width: 760px) {
   .tabbar{display:none}
   .app{padding-bottom:calc(40px + env(safe-area-inset-bottom))}
-  .dash-grid{display:grid;grid-template-columns:280px minmax(0,1fr);gap:18px;align-items:start}
-  .dash-rail{position:sticky;top:80px;display:flex;flex-direction:column;gap:14px}
-  .dash-main{display:flex;flex-direction:column;gap:0}
-  .week-strip{flex-direction:column;align-items:stretch;gap:6px}
-  .wday{flex-direction:row;align-items:center;justify-content:space-between;min-width:0;padding:6px 10px;border-radius:10px}
-  .wday-has,.wday-today,.wday-appt{background:var(--c-bg)}
-  .wday-today{background:var(--primary-tint)}
-  .wday-appt{background:#fae8e3}
-  .wday-circle{width:26px;height:26px;font-size:11px}
-  .wday-name{order:-1;width:38px;text-align:left}
+  .week-feed{max-width:640px;margin:0 auto}
   .vitals-scroll{overflow-x:visible;flex-wrap:wrap}
   .vital-pill{min-width:0;flex:1}
   .log-grid{grid-template-columns:repeat(4,1fr)}
 }
+
+/* week feed — scrollable history of week sections */
+.week-feed{display:flex;flex-direction:column;gap:0}
+.week-section{display:flex;flex-direction:column;gap:14px;margin-bottom:14px}
+.wk-divider{display:flex;align-items:center;gap:10px;margin:6px 2px 0}
+.wk-divider-label{font-size:11px;font-weight:500;color:var(--c-mist);background:var(--c-bg);padding:4px 10px;border-radius:999px;border:0.5px solid var(--c-line)}
+.load-more-row{display:flex;justify-content:center;margin:6px 0 18px}
+
+/* overall / all-time summary card */
+.overall-card{margin-bottom:14px}
+.overall-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.overall-stat{background:var(--c-bg);border-radius:var(--r-md);padding:10px 8px;text-align:center}
+.overall-v{font-size:18px;font-weight:500;color:var(--c-ink);line-height:1}
+.overall-v.green{color:#0f6e56}
+.overall-l{font-size:9px;color:var(--c-mist);margin-top:4px;line-height:1.3}

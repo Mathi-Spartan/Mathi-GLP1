@@ -150,7 +150,7 @@ export function LogModal({ type, userId, onClose, onSaved }) {
       setErr(error.message)
       return
     }
-    onSaved()
+    onSaved(type)
   }
 
   return (

@@ -79,4 +79,18 @@ export function toISODate(d) {
   return `${y}-${m}-${day}`
 }
 
+// Array of `count` week windows ending on `anchorDate`, going backward.
+// index 0 is the most recent (anchorDate itself), index 1 is the week
+// before that, etc. `offset` skips that many windows before starting —
+// used for "load earlier weeks" pagination.
+export function weekWindowsBack(anchorDate, count, offset = 0) {
+  const windows = []
+  for (let i = offset; i < offset + count; i++) {
+    const end = new Date(anchorDate)
+    end.setDate(end.getDate() - i * 7)
+    windows.push(reportWindow(end))
+  }
+  return windows
+}
+
 export { DAY }
