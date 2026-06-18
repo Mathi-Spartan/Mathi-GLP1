@@ -6,10 +6,10 @@ import { parseAppleHealthExport } from '../lib/appleHealth.js'
 import { nextTuesday, reportWindow, weekDays, weekWindowsBack, sameDay, fmtDate, toISODate } from '../lib/week.js'
 
 // ── icons ────────────────────────────────────────────────────────────────────
-function Ic({ d, size = 22 }) {
+function Ic({ d, size = 22, className }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
       <path d={d} />
     </svg>
   )
@@ -246,12 +246,6 @@ function WeekSection({ weekData, profile, appointment, isLatest, setOpenLog }) {
         </>
       )}
 
-      {!isLatest && (
-        <div className="wk-divider">
-          <span className="wk-divider-label">Week {weekNum || '—'} score: {score}</span>
-        </div>
-      )}
-
       {/* ── week strip ── */}
       <div className="panel week-panel">
         <div className="week-label">{isLatest ? 'This week' : 'Week'} · {fmtDate(weekData.window.start)} – {fmtDate(weekData.window.end)}</div>
@@ -450,6 +444,112 @@ function WeekSection({ weekData, profile, appointment, isLatest, setOpenLog }) {
   )
 }
 
+// ── PastWeekRow ───────────────────────────────────────────────────────────────
+// Compact, single-line summary for a past week. Tap to expand/collapse.
+function PastWeekRow({ weekData, profile, isOpen, onToggle }) {
+  const m = computeWeekMetrics(weekData, profile)
+  const { score, lastW, deltaW } = m
+  return (
+    <button className="pw-row" onClick={onToggle}>
+      <div className="pw-row-main">
+        <span className="pw-row-dates">{fmtDate(weekData.window.start)} – {fmtDate(weekData.window.end)}</span>
+        <span className="pw-row-sub">
+          {lastW ? `${n1(lastW)} kg` : 'No weight logged'}
+          {deltaW != null && ` · ${deltaW <= 0 ? '▼' : '▲'} ${Math.abs(deltaW).toFixed(1)} kg`}
+        </span>
+      </div>
+      <div className="pw-row-right">
+        <span className={`pw-score ${score >= 60 ? 'good' : 'warn'}`}>{score}</span>
+        <Ic d={I.chevR} size={15} className={`pw-chev ${isOpen ? 'pw-chev-open' : ''}`} />
+      </div>
+    </button>
+  )
+}
+
+// ── PastWeekDetail ───────────────────────────────────────────────────────────
+// Expanded view for a single past week: day strip + GLP-1 params only
+// (treatment-wide banners like journey/GI status live on the current week only).
+function PastWeekDetail({ weekData, profile, appointment }) {
+  const m = computeWeekMetrics(weekData, profile)
+  const { protPerKg, totalWater, avgWater, totalActiveMin, resistanceMin, avgSleep, avgMood, moodLabel, dayData } = m
+  const today = new Date()
+  const apptDate = new Date(appointment.appointment_date + 'T12:00:00')
+  const days = weekDays(weekData.window.end)
+
+  return (
+    <div className="pw-detail">
+      <div className="week-strip">
+        {days.map(day => {
+          const isToday = sameDay(day, today)
+          const isAppt = sameDay(day, apptDate)
+          const hits = dayData(day)
+          const hasAny = Object.values(hits).some(Boolean)
+          return (
+            <div key={day.toISOString()} className={`wday ${isToday ? 'wday-today' : ''} ${isAppt ? 'wday-appt' : ''} ${hasAny && !isToday && !isAppt ? 'wday-has' : ''}`}>
+              <div className="wday-name">{DAY_NAMES[day.getDay()]}</div>
+              <div className="wday-circle">{day.getDate()}</div>
+              <div className="wday-dot-row">
+                {hits.weight && <div className="wd g" />}
+                {hits.inj && <div className="wd r" />}
+                {hits.craving && <div className="wd p" />}
+                {hits.side && <div className="wd a" />}
+                {hits.activity && <div className="wd b" />}
+                {hits.sleep && <div className="wd v" />}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="params-grid" style={{ marginTop: 12 }}>
+        <div className="param-card">
+          <div className="pc-head">
+            <div className="pc-icon" style={{ background: '#e6f1fb', color: '#0c447c' }}><Ic d={I.protein} size={13} /></div>
+            <div><div className="pc-title">Protein</div></div>
+          </div>
+          <div className={`pc-val ${protPerKg != null ? (protPerKg >= 1.2 ? 'green' : 'amber') : ''}`}>
+            {protPerKg != null ? protPerKg.toFixed(2) : '—'}<span className="pc-unit">g/kg/day</span>
+          </div>
+        </div>
+        <div className="param-card">
+          <div className="pc-head">
+            <div className="pc-icon" style={{ background: '#e6f1fb', color: '#0c447c' }}><Ic d={I.water} size={13} /></div>
+            <div><div className="pc-title">Hydration</div></div>
+          </div>
+          <div className={`pc-val ${avgWater >= 2.5 ? 'green' : avgWater >= 1.5 ? 'amber' : 'warn'}`}>
+            {totalWater > 0 ? avgWater.toFixed(1) : '—'}<span className="pc-unit">L/day</span>
+          </div>
+        </div>
+        <div className="param-card">
+          <div className="pc-head">
+            <div className="pc-icon" style={{ background: '#faeeda', color: '#633806' }}><Ic d={I.activity} size={13} /></div>
+            <div><div className="pc-title">Activity</div></div>
+          </div>
+          <div className={`pc-val ${totalActiveMin >= 150 ? 'green' : totalActiveMin >= 60 ? 'amber' : 'warn'}`}>
+            {totalActiveMin || '—'}<span className="pc-unit">min</span>
+          </div>
+        </div>
+        <div className="param-card">
+          <div className="pc-head">
+            <div className="pc-icon" style={{ background: '#eeedfe', color: '#3c3489' }}><Ic d={I.sleep} size={13} /></div>
+            <div><div className="pc-title">Sleep</div></div>
+          </div>
+          <div className={`pc-val ${avgSleep != null ? (avgSleep >= 7 && avgSleep <= 9 ? 'green' : 'amber') : ''}`}>
+            {avgSleep != null ? avgSleep.toFixed(1) : '—'}<span className="pc-unit">hrs avg</span>
+          </div>
+        </div>
+        <div className="param-card param-card-wide">
+          <div className="pc-head">
+            <div className="pc-icon" style={{ background: '#fbeaf0', color: '#72243e' }}><Ic d={I.mood} size={13} /></div>
+            <div><div className="pc-title">Energy & mood</div></div>
+          </div>
+          <div className="pc-note">{avgMood != null ? `Average ${avgMood.toFixed(1)}/5 — ${moodLabel[Math.round(avgMood)]}` : 'No mood logged this week'}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── OverallCard ───────────────────────────────────────────────────────────────
 function OverallCard({ overall }) {
   if (!overall) return null
@@ -492,6 +592,7 @@ export default function Dashboard({ session }) {
   const [appointment, setAppointment] = useState(null)
   const [data, setData] = useState(null)
   const [weeksToShow, setWeeksToShow] = useState(WEEKS_PAGE)
+  const [expandedWeek, setExpandedWeek] = useState(null)
   const [overall, setOverall] = useState(null)
   const [loading, setLoading] = useState(true)
   const [openLog, setOpenLog] = useState(null)
@@ -678,22 +779,41 @@ export default function Dashboard({ session }) {
       <div className="week-feed">
         <OverallCard overall={overall} />
 
-        {data.weeks.map((wk, idx) => (
-          <WeekSection
-            key={wk.window.start.toISOString()}
-            weekData={wk}
-            profile={profile}
-            appointment={appointment}
-            isLatest={idx === 0}
-            setOpenLog={setOpenLog}
-          />
-        ))}
+        <WeekSection
+          weekData={data.weeks[0]}
+          profile={profile}
+          appointment={appointment}
+          isLatest={true}
+          setOpenLog={setOpenLog}
+        />
 
-        <div className="load-more-row">
-          <button className="btn" onClick={() => setWeeksToShow(n => n + WEEKS_PAGE)}>
-            Load earlier weeks
-          </button>
-        </div>
+        {data.weeks.length > 1 && (
+          <div className="panel pw-panel">
+            <div className="panel-h"><h2>Past weeks</h2></div>
+            <div className="pw-list">
+              {data.weeks.slice(1).map(wk => {
+                const key = wk.window.start.toISOString()
+                const isOpen = expandedWeek === key
+                return (
+                  <div key={key} className="pw-item">
+                    <PastWeekRow
+                      weekData={wk}
+                      profile={profile}
+                      isOpen={isOpen}
+                      onToggle={() => setExpandedWeek(isOpen ? null : key)}
+                    />
+                    {isOpen && (
+                      <PastWeekDetail weekData={wk} profile={profile} appointment={appointment} />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <button className="btn pw-more-btn" onClick={() => setWeeksToShow(n => n + WEEKS_PAGE)}>
+              Load earlier weeks
+            </button>
+          </div>
+        )}
 
 
       {/* ── log buttons ── */}
