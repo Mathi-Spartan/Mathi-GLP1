@@ -481,18 +481,18 @@ label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); 
 
 /* params grid */
 .params-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-.param-card{background:var(--c-surface);border-radius:var(--r-md);padding:12px;border:0.5px solid var(--c-line)}
+.param-card{background:var(--c-bg);border-radius:var(--r-lg);padding:14px;border:none}
 .param-card-wide{grid-column:span 2}
-.pc-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.pc-icon{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.pc-title{font-size:11px;font-weight:500;color:var(--c-ink)}
-.pc-sub{font-size:9px;color:var(--c-mist);margin-top:1px}
-.pc-val{font-size:18px;font-weight:500;color:var(--c-ink);line-height:1}
+.pc-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.pc-icon{width:28px;height:28px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.pc-title{font-size:12px;font-weight:500;color:var(--c-ink)}
+.pc-sub{font-size:10px;color:var(--c-mist);margin-top:1px}
+.pc-val{font-size:20px;font-weight:500;color:var(--c-mist);line-height:1}
 .pc-val.green{color:#0f6e56}.pc-val.amber{color:#854f0b}.pc-val.warn{color:#993c1d}
 .pc-unit{font-size:10px;font-weight:400;color:var(--c-mist);margin-left:2px}
-.pc-note{font-size:9.5px;color:var(--c-mist);margin-top:4px}
-.stat-bar{height:4px;border-radius:2px;background:var(--c-line);margin-top:7px;overflow:hidden}
-.stat-bar-fill{height:100%;border-radius:2px;transition:width .3s}
+.pc-note{font-size:10px;color:var(--c-mist);margin-top:6px}
+.stat-bar{height:5px;border-radius:3px;background:var(--c-surface);margin-top:8px;overflow:hidden}
+.stat-bar-fill{height:100%;border-radius:3px;transition:width .3s}
 
 /* mood row */
 .mood-row{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
@@ -506,7 +506,7 @@ label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); 
 /* log-something grid — tinted tile buttons, always-legible labels */
 .log-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 .log-tile{display:flex;flex-direction:column;align-items:center;gap:6px;background:none;border:none;padding:0}
-.log-tile-box{width:100%;aspect-ratio:1;border-radius:16px;display:flex;align-items:center;justify-content:center;border:0.5px solid transparent;transition:transform .08s ease,filter .15s}
+.log-tile-box{width:100%;aspect-ratio:1;border-radius:16px;display:flex;align-items:center;justify-content:center;background:var(--c-surface);border:1.5px solid var(--tile-border,var(--c-line));transition:transform .08s ease}
 .log-tile:active .log-tile-box{transform:scale(0.94)}
 .log-tile-label{font-size:11px;color:var(--c-ink);font-weight:500}
 .log-tile.tile-new .log-tile-label{color:#0f6e56;font-weight:600}

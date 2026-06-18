@@ -40,15 +40,15 @@ const I = {
 }
 
 const QUICK = [
-  { type: 'weight',    d: I.weight,    label: 'Weight',     bg: '#e1f5ee', fg: '#0f6e56' },
-  { type: 'injection', d: I.injection, label: 'Dose',        bg: '#e6f1fb', fg: '#185fa5' },
-  { type: 'meal',      d: I.meal,      label: 'Food',        bg: '#faece7', fg: '#993c1d' },
-  { type: 'craving',   d: I.craving,   label: 'Craving',     bg: '#faeeda', fg: '#854f0b' },
-  { type: 'water',     d: I.water,     label: 'Water',       bg: '#e6f1fb', fg: '#0c447c' },
-  { type: 'activity',  d: I.activity,  label: 'Activity',    bg: '#eaf3de', fg: '#3b6d11' },
-  { type: 'symptom',   d: I.symptom,   label: 'Side effect', bg: '#fbeaf0', fg: '#993556' },
-  { type: 'sleep',     d: I.sleep,     label: 'Sleep',        bg: '#eeedfe', fg: '#3c3489', isNew: true },
-  { type: 'mood',      d: I.mood,      label: 'Mood',         bg: '#fbeaf0', fg: '#72243e', isNew: true },
+  { type: 'weight',    d: I.weight,    label: 'Weight',     border: '#5dcaa5', fg: '#0f6e56' },
+  { type: 'injection', d: I.injection, label: 'Dose',        border: '#85b7eb', fg: '#185fa5' },
+  { type: 'meal',      d: I.meal,      label: 'Food',        border: '#f0997b', fg: '#993c1d' },
+  { type: 'craving',   d: I.craving,   label: 'Craving',     border: '#ef9f27', fg: '#854f0b' },
+  { type: 'water',     d: I.water,     label: 'Water',       border: '#378add', fg: '#0c447c' },
+  { type: 'activity',  d: I.activity,  label: 'Activity',    border: '#97c459', fg: '#3b6d11' },
+  { type: 'symptom',   d: I.symptom,   label: 'Side effect', border: '#ed93b1', fg: '#993556' },
+  { type: 'sleep',     d: I.sleep,     label: 'Sleep',        border: '#7f77dd', fg: '#3c3489', isNew: true },
+  { type: 'mood',      d: I.mood,      label: 'Mood',         border: '#d4537e', fg: '#72243e', isNew: true },
 ]
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -369,7 +369,7 @@ function WeekSection({ weekData, profile, appointment, isLatest, setOpenLog }) {
 
           <div className="param-card">
             <div className="pc-head">
-              <div className="pc-icon" style={{ background: '#e6f1fb', color: '#0c447c' }}><Ic d={I.protein} size={13} /></div>
+              <div className="pc-icon" style={{ background: '#e6f1fb', color: '#0c447c' }}><Ic d={I.protein} size={15} /></div>
               <div><div className="pc-title">Protein</div><div className="pc-sub">Target ≥ 1.2 g/kg/day</div></div>
             </div>
             <div className={`pc-val ${protPerKg != null ? (protPerKg >= 1.2 ? 'green' : 'amber') : ''}`}>
@@ -381,7 +381,7 @@ function WeekSection({ weekData, profile, appointment, isLatest, setOpenLog }) {
 
           <div className="param-card">
             <div className="pc-head">
-              <div className="pc-icon" style={{ background: '#e6f1fb', color: '#0c447c' }}><Ic d={I.water} size={13} /></div>
+              <div className="pc-icon" style={{ background: '#e6f1fb', color: '#0c447c' }}><Ic d={I.water} size={15} /></div>
               <div><div className="pc-title">Hydration</div><div className="pc-sub">Target ≥ 2.5 L/day</div></div>
             </div>
             <div className={`pc-val ${avgWater >= 2.5 ? 'green' : avgWater >= 1.5 ? 'amber' : 'warn'}`}>
@@ -393,7 +393,7 @@ function WeekSection({ weekData, profile, appointment, isLatest, setOpenLog }) {
 
           <div className="param-card">
             <div className="pc-head">
-              <div className="pc-icon" style={{ background: '#faeeda', color: '#633806' }}><Ic d={I.activity} size={13} /></div>
+              <div className="pc-icon" style={{ background: '#faeeda', color: '#633806' }}><Ic d={I.activity} size={15} /></div>
               <div><div className="pc-title">Activity</div><div className="pc-sub">Target ≥ 150 min/week</div></div>
             </div>
             <div className={`pc-val ${totalActiveMin >= 150 ? 'green' : totalActiveMin >= 60 ? 'amber' : 'warn'}`}>
@@ -405,7 +405,7 @@ function WeekSection({ weekData, profile, appointment, isLatest, setOpenLog }) {
 
           <div className="param-card">
             <div className="pc-head">
-              <div className="pc-icon" style={{ background: '#eeedfe', color: '#3c3489' }}><Ic d={I.sleep} size={13} /></div>
+              <div className="pc-icon" style={{ background: '#eeedfe', color: '#3c3489' }}><Ic d={I.sleep} size={15} /></div>
               <div><div className="pc-title">Sleep</div><div className="pc-sub">Target 7–9 hrs</div></div>
             </div>
             <div className={`pc-val ${avgSleep != null ? (avgSleep >= 7 && avgSleep <= 9 ? 'green' : 'amber') : ''}`}>
@@ -417,7 +417,7 @@ function WeekSection({ weekData, profile, appointment, isLatest, setOpenLog }) {
 
           <div className="param-card param-card-wide">
             <div className="pc-head">
-              <div className="pc-icon" style={{ background: '#fbeaf0', color: '#72243e' }}><Ic d={I.mood} size={13} /></div>
+              <div className="pc-icon" style={{ background: '#fbeaf0', color: '#72243e' }}><Ic d={I.mood} size={15} /></div>
               <div><div className="pc-title">Energy & mood</div><div className="pc-sub">Daily self-report</div></div>
             </div>
             <div className="mood-row">
@@ -504,7 +504,7 @@ function PastWeekDetail({ weekData, profile, appointment }) {
       <div className="params-grid" style={{ marginTop: 12 }}>
         <div className="param-card">
           <div className="pc-head">
-            <div className="pc-icon" style={{ background: '#e6f1fb', color: '#0c447c' }}><Ic d={I.protein} size={13} /></div>
+            <div className="pc-icon" style={{ background: '#e6f1fb', color: '#0c447c' }}><Ic d={I.protein} size={15} /></div>
             <div><div className="pc-title">Protein</div></div>
           </div>
           <div className={`pc-val ${protPerKg != null ? (protPerKg >= 1.2 ? 'green' : 'amber') : ''}`}>
@@ -513,7 +513,7 @@ function PastWeekDetail({ weekData, profile, appointment }) {
         </div>
         <div className="param-card">
           <div className="pc-head">
-            <div className="pc-icon" style={{ background: '#e6f1fb', color: '#0c447c' }}><Ic d={I.water} size={13} /></div>
+            <div className="pc-icon" style={{ background: '#e6f1fb', color: '#0c447c' }}><Ic d={I.water} size={15} /></div>
             <div><div className="pc-title">Hydration</div></div>
           </div>
           <div className={`pc-val ${avgWater >= 2.5 ? 'green' : avgWater >= 1.5 ? 'amber' : 'warn'}`}>
@@ -522,7 +522,7 @@ function PastWeekDetail({ weekData, profile, appointment }) {
         </div>
         <div className="param-card">
           <div className="pc-head">
-            <div className="pc-icon" style={{ background: '#faeeda', color: '#633806' }}><Ic d={I.activity} size={13} /></div>
+            <div className="pc-icon" style={{ background: '#faeeda', color: '#633806' }}><Ic d={I.activity} size={15} /></div>
             <div><div className="pc-title">Activity</div></div>
           </div>
           <div className={`pc-val ${totalActiveMin >= 150 ? 'green' : totalActiveMin >= 60 ? 'amber' : 'warn'}`}>
@@ -531,7 +531,7 @@ function PastWeekDetail({ weekData, profile, appointment }) {
         </div>
         <div className="param-card">
           <div className="pc-head">
-            <div className="pc-icon" style={{ background: '#eeedfe', color: '#3c3489' }}><Ic d={I.sleep} size={13} /></div>
+            <div className="pc-icon" style={{ background: '#eeedfe', color: '#3c3489' }}><Ic d={I.sleep} size={15} /></div>
             <div><div className="pc-title">Sleep</div></div>
           </div>
           <div className={`pc-val ${avgSleep != null ? (avgSleep >= 7 && avgSleep <= 9 ? 'green' : 'amber') : ''}`}>
@@ -540,7 +540,7 @@ function PastWeekDetail({ weekData, profile, appointment }) {
         </div>
         <div className="param-card param-card-wide">
           <div className="pc-head">
-            <div className="pc-icon" style={{ background: '#fbeaf0', color: '#72243e' }}><Ic d={I.mood} size={13} /></div>
+            <div className="pc-icon" style={{ background: '#fbeaf0', color: '#72243e' }}><Ic d={I.mood} size={15} /></div>
             <div><div className="pc-title">Energy & mood</div></div>
           </div>
           <div className="pc-note">{avgMood != null ? `Average ${avgMood.toFixed(1)}/5 — ${moodLabel[Math.round(avgMood)]}` : 'No mood logged this week'}</div>
@@ -823,8 +823,8 @@ export default function Dashboard({ session }) {
           {QUICK.map(q => (
             <button key={q.type} className={`log-tile ${q.isNew ? 'tile-new' : ''}`}
               onClick={() => setOpenLog(q.type)}>
-              <span className="log-tile-box" style={{ background: q.bg, color: q.fg }}>
-                <Ic d={q.d} size={22} />
+              <span className="log-tile-box" style={{ '--tile-border': q.border, color: q.fg }}>
+                <Ic d={q.d} size={21} />
               </span>
               <span className="log-tile-label">{q.label}</span>
             </button>
